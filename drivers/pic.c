@@ -1,4 +1,8 @@
-/* pic.c - 8259 PIC (Programmable Interrupt Controller) driver - FIXED */
+/* pic.c - 8259 PIC (Programmable Interrupt Controller) driver - FIXED
+ * 
+ * CRITICAL FIX: Explicitly unmask IRQ 1 (keyboard) instead of restoring
+ * old masks that had it disabled.
+ */
 
 #include "../kernel/kernel.h"
 
@@ -42,20 +46,23 @@ void pic_init(void) {
     outb(PIC2_DATA, ICW4_8086);
     io_wait();
     
-    /* CRITICAL FIX: Unmask IRQs instead of restoring old masks
+    /* CRITICAL FIX: Explicitly enable IRQs instead of restoring old masks
      * 
-     * The old code restored masks which had keyboard disabled.
-     * Now we explicitly enable IRQ 0 (timer) and IRQ 1 (keyboard).
+     * The old code did: outb(PIC1_DATA, mask1) which restored BIOS masks
+     * that had keyboard disabled. Now we explicitly enable what we need.
      * 
-     * Mask format: 1 bit per IRQ, 1=masked (disabled), 0=unmasked (enabled)
-     * 0xFC = 11111100 in binary
-     *        ||||||||
-     *        |||||||+-- IRQ 0 (timer) = 0 = ENABLED
-     *        ||||||+--- IRQ 1 (keyboard) = 0 = ENABLED  
-     *        |||||+---- IRQ 2 (cascade) = 1 = MASKED (always masked)
-     *        ||||+----- IRQ 3-7 = 1 = MASKED (can enable later as needed)
+     * PIC mask bits: 1 = masked (disabled), 0 = unmasked (enabled)
+     * 
+     * Binary: 11111100
+     *         ||||||||
+     *         |||||||+-- Bit 0: IRQ 0 (timer) = 0 = ENABLED
+     *         ||||||+--- Bit 1: IRQ 1 (keyboard) = 0 = ENABLED
+     *         |||||+---- Bit 2: IRQ 2 (cascade) = 1 = MASKED (always)
+     *         ||||+----- Bits 3-7: Other IRQs = 1 = MASKED
+     * 
+     * 0xFC = 11111100 binary
      */
-    outb(PIC1_DATA, 0xFC);  /* Enable IRQ 0 and 1, mask rest */
+    outb(PIC1_DATA, 0xFC);  /* Enable IRQ 0 (timer) and IRQ 1 (keyboard) */
     outb(PIC2_DATA, 0xFF);  /* Mask all slave IRQs for now */
 }
 
