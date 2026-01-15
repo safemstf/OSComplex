@@ -1,209 +1,187 @@
-/* interrupts.s - Low-level interrupt handler stubs
+/* interrupts/interrupts.s - Low-level interrupt handler stubs (FIXED)
  * 
- * WHY WE NEED ASSEMBLY HERE:
- * When an interrupt occurs, the CPU needs to:
- * 1. Save the current state (registers)
- * 2. Call the handler
- * 3. Restore the state
- * 4. Return from interrupt (special instruction: IRET)
- * 
- * We can't do this purely in C because:
- * - C doesn't have direct access to CPU registers
- * - C doesn't know about the IRET instruction
- * - We need precise control over the stack
- * 
- * ARCHITECTURE:
- * These stubs are the "glue" between hardware and software.
- * Hardware -> Assembly stub -> C handler function
- * 
- * Each stub does:
- * 1. Save all registers (PUSHA)
- * 2. Call the C handler
- * 3. Restore registers (POPA)
- * 4. Return from interrupt (IRET)
+ * FIX APPLIED: Replaced IRQ macro with manual stubs because macro
+ * parameter substitution was failing (push $\irq_num not expanding correctly)
  */
 
 .section .text
 
-/* Macro: Create an ISR stub WITHOUT an error code
- * 
- * Most CPU exceptions don't push an error code. We push a dummy
- * 0 to keep the stack frame consistent.
- */
+/* Macro: Create an ISR stub WITHOUT an error code */
 .macro ISR_NOERRCODE num
 .global isr\num
 isr\num:
-    cli                    /* Disable interrupts */
-    push $0                /* Push dummy error code */
-    push $\num             /* Push interrupt number */
-    jmp isr_common_stub    /* Jump to common handler */
+    cli
+    push $0
+    push $\num
+    jmp isr_common_stub
 .endm
 
-/* Macro: Create an ISR stub WITH an error code
- * 
- * Some CPU exceptions (like page fault, GPF) push an error code
- * automatically. We don't need to push a dummy one.
- */
+/* Macro: Create an ISR stub WITH an error code */
 .macro ISR_ERRCODE num
 .global isr\num
 isr\num:
-    cli                    /* Disable interrupts */
-    push $\num             /* Push interrupt number */
-    jmp isr_common_stub    /* Jump to common handler */
+    cli
+    push $\num
+    jmp isr_common_stub
 .endm
 
-/* Macro: Create an IRQ stub
- * 
- * Hardware interrupts (IRQs) need to:
- * 1. Save state
- * 2. Call handler
- * 3. Send EOI (End Of Interrupt) to PIC
- * 4. Restore state
- */
-.macro IRQ num, irq_num
-.global irq\num
-irq\num:
-    cli                    /* Disable interrupts */
-    push $0                /* Push dummy error code */
-    push $\irq_num         /* Push IRQ number */
-    jmp irq_common_stub    /* Jump to common handler */
-.endm
-
-/* ================================================================
- * CPU EXCEPTION HANDLERS (0-31)
- * ================================================================
- * These are defined by Intel. Each has a specific meaning:
- */
-
-ISR_NOERRCODE 0    /* Divide by zero */
-ISR_NOERRCODE 1    /* Debug exception */
-ISR_NOERRCODE 2    /* Non-maskable interrupt */
-ISR_NOERRCODE 3    /* Breakpoint */
-ISR_NOERRCODE 4    /* Overflow */
-ISR_NOERRCODE 5    /* Bound range exceeded */
-ISR_NOERRCODE 6    /* Invalid opcode */
-ISR_NOERRCODE 7    /* Device not available (FPU) */
-ISR_ERRCODE   8    /* Double fault (has error code) */
-ISR_NOERRCODE 9    /* Coprocessor segment overrun */
-ISR_ERRCODE   10   /* Invalid TSS (has error code) */
-ISR_ERRCODE   11   /* Segment not present (has error code) */
-ISR_ERRCODE   12   /* Stack segment fault (has error code) */
-ISR_ERRCODE   13   /* General protection fault (has error code) */
-ISR_ERRCODE   14   /* Page fault (has error code) */
-ISR_NOERRCODE 15   /* Reserved */
-ISR_NOERRCODE 16   /* x87 FPU error */
-ISR_ERRCODE   17   /* Alignment check (has error code) */
-ISR_NOERRCODE 18   /* Machine check */
-ISR_NOERRCODE 19   /* SIMD floating point exception */
-ISR_NOERRCODE 20   /* Virtualization exception */
-ISR_ERRCODE   21   /* Control protection exception (has error code) */
-ISR_NOERRCODE 22   /* Reserved */
-ISR_NOERRCODE 23   /* Reserved */
-ISR_NOERRCODE 24   /* Reserved */
-ISR_NOERRCODE 25   /* Reserved */
-ISR_NOERRCODE 26   /* Reserved */
-ISR_NOERRCODE 27   /* Reserved */
-ISR_NOERRCODE 28   /* Reserved */
-ISR_NOERRCODE 29   /* Reserved */
-ISR_NOERRCODE 30   /* Reserved */
-ISR_NOERRCODE 31   /* Reserved */
+/* CPU EXCEPTION HANDLERS (0-31) - These work fine with macros */
+ISR_NOERRCODE 0
+ISR_NOERRCODE 1
+ISR_NOERRCODE 2
+ISR_NOERRCODE 3
+ISR_NOERRCODE 4
+ISR_NOERRCODE 5
+ISR_NOERRCODE 6
+ISR_NOERRCODE 7
+ISR_ERRCODE   8
+ISR_NOERRCODE 9
+ISR_ERRCODE   10
+ISR_ERRCODE   11
+ISR_ERRCODE   12
+ISR_ERRCODE   13
+ISR_ERRCODE   14
+ISR_NOERRCODE 15
+ISR_NOERRCODE 16
+ISR_ERRCODE   17
+ISR_NOERRCODE 18
+ISR_NOERRCODE 19
+ISR_NOERRCODE 20
+ISR_ERRCODE   21
+ISR_NOERRCODE 22
+ISR_NOERRCODE 23
+ISR_NOERRCODE 24
+ISR_NOERRCODE 25
+ISR_NOERRCODE 26
+ISR_NOERRCODE 27
+ISR_NOERRCODE 28
+ISR_NOERRCODE 29
+ISR_NOERRCODE 30
+ISR_NOERRCODE 31
 
 /* ================================================================
  * HARDWARE INTERRUPT HANDLERS (IRQs 0-15)
  * ================================================================
- * These are remapped to interrupts 32-47 to avoid conflicts
- * with CPU exceptions.
+ * MANUALLY WRITTEN - Macro expansion was failing!
+ * Each IRQ stub explicitly pushes its interrupt number (32-47)
  */
 
-IRQ 0, 32    /* Timer interrupt */
-IRQ 1, 33    /* Keyboard interrupt */
-IRQ 2, 34    /* Cascade (used internally by PIC) */
-IRQ 3, 35    /* COM2 */
-IRQ 4, 36    /* COM1 */
-IRQ 5, 37    /* LPT2 */
-IRQ 6, 38    /* Floppy disk */
-IRQ 7, 39    /* LPT1 */
-IRQ 8, 40    /* CMOS real-time clock */
-IRQ 9, 41    /* Free for peripherals / legacy SCSI / NIC */
-IRQ 10, 42   /* Free for peripherals / SCSI / NIC */
-IRQ 11, 43   /* Free for peripherals / SCSI / NIC */
-IRQ 12, 44   /* PS/2 Mouse */
-IRQ 13, 45   /* FPU / Coprocessor / Inter-processor */
-IRQ 14, 46   /* Primary ATA hard disk */
-IRQ 15, 47   /* Secondary ATA hard disk */
+.global irq0
+irq0:
+    cli
+    push $0
+    push $32        /* Timer interrupt */
+    jmp irq_common_stub
+
+.global irq1
+irq1:
+    cli
+    push $0
+    push $33        /* Keyboard interrupt */
+    jmp irq_common_stub
+
+.global irq2
+irq2:
+    cli
+    push $0
+    push $34        /* Cascade */
+    jmp irq_common_stub
+
+.global irq3
+irq3:
+    cli
+    push $0
+    push $35        /* COM2 */
+    jmp irq_common_stub
+
+.global irq4
+irq4:
+    cli
+    push $0
+    push $36        /* COM1 */
+    jmp irq_common_stub
+
+.global irq5
+irq5:
+    cli
+    push $0
+    push $37        /* LPT2 */
+    jmp irq_common_stub
+
+.global irq6
+irq6:
+    cli
+    push $0
+    push $38        /* Floppy disk */
+    jmp irq_common_stub
+
+.global irq7
+irq7:
+    cli
+    push $0
+    push $39        /* LPT1 */
+    jmp irq_common_stub
+
+.global irq8
+irq8:
+    cli
+    push $0
+    push $40        /* CMOS real-time clock */
+    jmp irq_common_stub
+
+.global irq9
+irq9:
+    cli
+    push $0
+    push $41        /* Free for peripherals */
+    jmp irq_common_stub
+
+.global irq10
+irq10:
+    cli
+    push $0
+    push $42        /* Free for peripherals */
+    jmp irq_common_stub
+
+.global irq11
+irq11:
+    cli
+    push $0
+    push $43        /* Free for peripherals */
+    jmp irq_common_stub
+
+.global irq12
+irq12:
+    cli
+    push $0
+    push $44        /* PS/2 Mouse */
+    jmp irq_common_stub
+
+.global irq13
+irq13:
+    cli
+    push $0
+    push $45        /* FPU / Coprocessor */
+    jmp irq_common_stub
+
+.global irq14
+irq14:
+    cli
+    push $0
+    push $46        /* Primary ATA hard disk */
+    jmp irq_common_stub
+
+.global irq15
+irq15:
+    cli
+    push $0
+    push $47        /* Secondary ATA hard disk */
+    jmp irq_common_stub
 
 /* ================================================================
  * COMMON ISR HANDLER
- * ================================================================
- * All CPU exception stubs jump here. This code:
- * 1. Saves all registers
- * 2. Calls C handler (isr_handler)
- * 3. Restores registers
- * 4. Returns from interrupt
- * 
- * Stack layout when we get here (pushed by CPU/stub):
- * [SS]           <- Only if privilege level changed
- * [ESP]          <- Only if privilege level changed
- * EFLAGS
- * CS
- * EIP
- * Error code     <- Or dummy 0
- * Interrupt num
- */
+ * ================================================================ */
 isr_common_stub:
-    /* Save all general-purpose registers
-     * PUSHA pushes: EAX, ECX, EDX, EBX, ESP, EBP, ESI, EDI */
-    pusha
-    
-    /* Save segment registers
-     * We need to preserve these too */
-    push %ds
-    push %es
-    push %fs
-    push %gs
-    
-    /* Load kernel data segment
-     * Ensure we're using kernel's data segment for the handler */
-    mov $0x10, %ax    /* 0x10 = kernel data segment selector */
-    mov %ax, %ds
-    mov %ax, %es
-    mov %ax, %fs
-    mov %ax, %gs
-    
-    /* Call C exception handler
-     * The C function can access interrupt number and error code
-     * from the stack */
-    call isr_handler
-    
-    /* Restore segment registers */
-    pop %gs
-    pop %fs
-    pop %es
-    pop %ds
-    
-    /* Restore general-purpose registers */
-    popa
-    
-    /* Clean up error code and interrupt number from stack
-     * We pushed 2 values (8 bytes total) */
-    add $8, %esp
-    
-    /* Return from interrupt
-     * IRET pops: EIP, CS, EFLAGS (and ESP, SS if privilege changed)
-     * This is a special instruction that returns from an interrupt */
-    iret
-
-/* ================================================================
- * COMMON IRQ HANDLER
- * ================================================================
- * All hardware interrupt stubs jump here. Similar to ISR handler,
- * but also needs to send EOI (End Of Interrupt) to the PIC.
- * 
- * The PIC won't send more interrupts until we acknowledge the
- * current one by sending EOI.
- */
-irq_common_stub:
-    /* Save all registers (same as ISR) */
     pusha
     
     push %ds
@@ -211,32 +189,53 @@ irq_common_stub:
     push %fs
     push %gs
     
-    /* Load kernel data segment */
     mov $0x10, %ax
     mov %ax, %ds
     mov %ax, %es
     mov %ax, %fs
     mov %ax, %gs
     
-    /* Call C IRQ handler
-     * This will dispatch to the appropriate handler
-     * (keyboard, timer, etc.) */
-    call irq_handler
+    call isr_handler
     
-    /* Restore segments */
     pop %gs
     pop %fs
     pop %es
     pop %ds
     
-    /* Restore registers */
     popa
     
-    /* Clean up pushed values */
     add $8, %esp
     
-    /* Return from interrupt */
     iret
 
-/* Mark stack as non-executable */
+/* ================================================================
+ * COMMON IRQ HANDLER
+ * ================================================================ */
+irq_common_stub:
+    pusha
+    
+    push %ds
+    push %es
+    push %fs
+    push %gs
+    
+    mov $0x10, %ax
+    mov %ax, %ds
+    mov %ax, %es
+    mov %ax, %fs
+    mov %ax, %gs
+    
+    call irq_handler
+    
+    pop %gs
+    pop %fs
+    pop %es
+    pop %ds
+    
+    popa
+    
+    add $8, %esp
+    
+    iret
+
 .section .note.GNU-stack,"",@progbits

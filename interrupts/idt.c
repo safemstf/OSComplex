@@ -1,16 +1,4 @@
-/* idt.c - Interrupt Descriptor Table management
- * 
- * The IDT tells the CPU where to jump when an interrupt occurs.
- * It's an array of 256 entries, each describing one interrupt handler.
- * 
- * Why 256? Intel x86 supports up to 256 different interrupts:
- * - 0-31:   CPU exceptions (divide by zero, page fault, etc.) - Reserved by Intel
- * - 32-47:  Hardware interrupts (IRQs) - We remap PIC to use these
- * - 48-255: Available for software interrupts (system calls, etc.)
- * 
- * Critical OS concept: The IDT is how hardware communicates with software.
- * Without it, keyboard presses, timer ticks, and disk operations would be impossible.
- */
+/* idt.c - Current version from your documents */
 
 #include "../kernel/kernel.h"
 
@@ -20,10 +8,7 @@ static struct idt_entry idt[IDT_ENTRIES];
 /* IDT pointer - tells CPU where our IDT is located in memory */
 static struct idt_ptr idtp;
 
-/* External assembly stub declarations (we'll write these next)
- * These are the actual interrupt handler entry points in assembly.
- * They handle CPU state saving/restoring before calling C functions.
- */
+/* External assembly stub declarations */
 extern void isr0(void);   /* Divide by zero */
 extern void isr1(void);   /* Debug */
 extern void isr2(void);   /* Non-maskable interrupt */
@@ -57,10 +42,10 @@ extern void isr29(void);  /* Reserved */
 extern void isr30(void);  /* Reserved */
 extern void isr31(void);  /* Reserved */
 
-/* IRQ handlers (hardware interrupts - keyboard, timer, etc.) */
+/* IRQ handlers (hardware interrupts) */
 extern void irq0(void);   /* Timer */
 extern void irq1(void);   /* Keyboard */
-extern void irq2(void);   /* Cascade (never raised) */
+extern void irq2(void);   /* Cascade */
 extern void irq3(void);   /* COM2 */
 extern void irq4(void);   /* COM1 */
 extern void irq5(void);   /* LPT2 */
@@ -75,55 +60,23 @@ extern void irq13(void);  /* FPU / coprocessor / inter-processor */
 extern void irq14(void);  /* Primary ATA hard disk */
 extern void irq15(void);  /* Secondary ATA hard disk */
 
-/* Set up one IDT entry
- * 
- * Parameters:
- * - num: Interrupt number (0-255)
- * - handler: Address of the handler function
- * - selector: Code segment selector (0x08 = kernel code segment)
- * - flags: Type and privilege level
- * 
- * Flags format:
- * Bit 7:    Present (must be 1 for valid entry)
- * Bit 6-5:  DPL (privilege level: 0=kernel, 3=user)
- * Bit 4:    Storage segment (0 for interrupt gates)
- * Bit 3-0:  Gate type (0xE = 32-bit interrupt gate, 0xF = 32-bit trap gate)
- * 
- * Common flag values:
- * 0x8E = Present, ring 0, 32-bit interrupt gate (disables interrupts)
- * 0x8F = Present, ring 0, 32-bit trap gate (doesn't disable interrupts)
- */
 void idt_set_gate(uint8_t num, uint32_t handler, uint16_t selector, uint8_t flags) {
-    idt[num].base_low = handler & 0xFFFF;          /* Lower 16 bits of handler address */
-    idt[num].base_high = (handler >> 16) & 0xFFFF; /* Upper 16 bits of handler address */
-    idt[num].selector = selector;                   /* Code segment selector */
-    idt[num].zero = 0;                             /* Always zero */
-    idt[num].flags = flags;                        /* Type and attributes */
+    idt[num].base_low = handler & 0xFFFF;
+    idt[num].base_high = (handler >> 16) & 0xFFFF;
+    idt[num].selector = selector;
+    idt[num].zero = 0;
+    idt[num].flags = flags;
 }
 
-/* Initialize the IDT
- * 
- * This function:
- * 1. Sets up the IDT pointer structure
- * 2. Installs handlers for CPU exceptions (0-31)
- * 3. Installs handlers for hardware IRQs (32-47)
- * 4. Loads the IDT using the LIDT instruction
- * 
- * After this, interrupts can be enabled safely.
- */
 void idt_init(void) {
     /* Set up IDT pointer structure */
     idtp.limit = (sizeof(struct idt_entry) * IDT_ENTRIES) - 1;
     idtp.base = (uint32_t)&idt;
     
-    /* Clear the entire IDT (all entries invalid by default) */
+    /* Clear the entire IDT */
     memset(&idt, 0, sizeof(struct idt_entry) * IDT_ENTRIES);
     
-    /* Install CPU exception handlers (interrupts 0-31)
-     * These are defined by Intel and handle CPU errors/faults.
-     * 0x08 = kernel code segment selector
-     * 0x8E = present, ring 0, 32-bit interrupt gate
-     */
+    /* Install CPU exception handlers (interrupts 0-31) */
     idt_set_gate(0, (uint32_t)isr0, 0x08, 0x8E);
     idt_set_gate(1, (uint32_t)isr1, 0x08, 0x8E);
     idt_set_gate(2, (uint32_t)isr2, 0x08, 0x8E);
@@ -140,7 +93,7 @@ void idt_init(void) {
     idt_set_gate(13, (uint32_t)isr13, 0x08, 0x8E);
     idt_set_gate(14, (uint32_t)isr14, 0x08, 0x8E);
     idt_set_gate(15, (uint32_t)isr15, 0x08, 0x8E);
-    idt_set_gate(16, (uint32_t)isr16, 0x08, 0x8E);
+    idt_set_gate(16, (uint32_t)isr16, 0x08, 0x8E);    // ← Interrupt 16
     idt_set_gate(17, (uint32_t)isr17, 0x08, 0x8E);
     idt_set_gate(18, (uint32_t)isr18, 0x08, 0x8E);
     idt_set_gate(19, (uint32_t)isr19, 0x08, 0x8E);
@@ -157,12 +110,9 @@ void idt_init(void) {
     idt_set_gate(30, (uint32_t)isr30, 0x08, 0x8E);
     idt_set_gate(31, (uint32_t)isr31, 0x08, 0x8E);
     
-    /* Install IRQ handlers (interrupts 32-47)
-     * The PIC is remapped to use these interrupt numbers to avoid
-     * conflicts with CPU exceptions.
-     */
+    /* Install IRQ handlers (interrupts 32-47) */
     idt_set_gate(32, (uint32_t)irq0, 0x08, 0x8E);   /* Timer */
-    idt_set_gate(33, (uint32_t)irq1, 0x08, 0x8E);   /* Keyboard */
+    idt_set_gate(33, (uint32_t)irq1, 0x08, 0x8E);   /* Keyboard */ // ← Interrupt 33
     idt_set_gate(34, (uint32_t)irq2, 0x08, 0x8E);
     idt_set_gate(35, (uint32_t)irq3, 0x08, 0x8E);
     idt_set_gate(36, (uint32_t)irq4, 0x08, 0x8E);
@@ -178,7 +128,6 @@ void idt_init(void) {
     idt_set_gate(46, (uint32_t)irq14, 0x08, 0x8E);
     idt_set_gate(47, (uint32_t)irq15, 0x08, 0x8E);
     
-    /* Load the IDT - tells CPU where to find interrupt handlers
-     * After this instruction, the CPU knows about our interrupt table */
+    /* Load the IDT */
     __asm__ volatile("lidt %0" : : "m"(idtp));
 }
