@@ -7,6 +7,7 @@
 #include "kernel.h"
 #include "../mm/pmm.h"
 #include "../mm/paging.h"
+#include "../mm/heap.h"
 #include "../lib/string.h"
 
 /* Linker-provided symbols (defined in linker.ld) */
@@ -67,6 +68,9 @@ void kernel_main(void)
     terminal_writestring("[PAGING] Setting up identity-mapped paging...\n");
     paging_init();
     terminal_writestring("[PAGING] Paging enabled\n\n");
+
+    terminal_writestring("[HEAP] Initializing kernel heap...\n");
+    heap_init();
 
     /* =========================================================
      * Step 3: Interrupt Descriptor Table
