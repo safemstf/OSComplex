@@ -3,10 +3,10 @@
  */
 
 #include "../kernel/kernel.h"
-
+#include "../kernel/fpu.h"
 /* Forward declarations (from other C files) to avoid implicit declarations */
-extern void page_fault_handler(uint32_t *stack_ptr);  /* keeps your existing PF handler signature */
-extern void pic_send_eoi(uint8_t irq);                /* from drivers/pic.c */
+extern void page_fault_handler(uint32_t *stack_ptr); /* keeps your existing PF handler signature */
+extern void pic_send_eoi(uint8_t irq);               /* from drivers/pic.c */
 
 /* Keep your exception messages exactly as before */
 static const char *exception_messages[] = {
@@ -34,8 +34,7 @@ static const char *exception_messages[] = {
     "Control Protection Exception",
     "Reserved", "Reserved", "Reserved", "Reserved",
     "Reserved", "Reserved", "Reserved", "Reserved",
-    "Reserved", "Reserved"
-};
+    "Reserved", "Reserved"};
 
 /* --- small helpers for hex/decimal printing (unchanged semantics) --- */
 static void print_hex_digit(uint8_t val)
@@ -67,12 +66,11 @@ static void print_dec(uint32_t val)
 /* --- Accessor macros that encapsulate the magic indices.
    Keep these so you can switch to a struct later by editing just these
    macros (no assembly changes needed). --- */
-#define STACK_INTNO(sp)   ((sp)[13])
+#define STACK_INTNO(sp) ((sp)[13])
 #define STACK_ERRCODE(sp) ((sp)[14])
-#define STACK_EIP(sp)     ((sp)[15])
-#define STACK_CS(sp)      ((sp)[16])
-
-/* CPU Exception Handler (keeps original signature and behavior) */
+#define STACK_EIP(sp) ((sp)[15])
+#define STACK_CS(sp) ((sp)[16])
+/* CPU Exception Handler (updated: proper FPU/SSE dispatch) */
 void isr_handler(void)
 {
     uint32_t *stack_ptr;
@@ -81,14 +79,38 @@ void isr_handler(void)
     uint32_t int_no = STACK_INTNO(stack_ptr);
     uint32_t err_code = STACK_ERRCODE(stack_ptr);
 
-    /* SPECIAL CASE: Page fault (#14) - forward to your handler */
+    /* === FPU / SSE EXCEPTIONS === */
+
+    /* #7: Device Not Available (lazy FPU enable) */
+    if (int_no == 7)
+    {
+        isr_device_not_available(stack_ptr);
+        return; /* MUST return so the faulting instruction retries */
+    }
+
+    /* #16: x87 FPU Floating-Point Exception */
+    if (int_no == 16)
+    {
+        isr_x87_fpu_fault(stack_ptr);
+        return;
+    }
+
+    /* #19: SIMD Floating-Point Exception */
+    if (int_no == 19)
+    {
+        isr_simd_fp_exception(stack_ptr);
+        return;
+    }
+
+    /* SPECIAL CASE: Page fault (#14) */
     if (int_no == 14)
     {
         page_fault_handler(stack_ptr);
-        return; /* If it returns, recovery succeeded */
+        return;
     }
 
-    /* All other exceptions are fatal */
+    /* === All other exceptions are fatal === */
+
     terminal_setcolor(vga_entry_color(VGA_COLOR_LIGHT_RED, VGA_COLOR_BLACK));
     terminal_writestring("\n\n");
     terminal_writestring("╔══════════════════════════════════════════════════════════╗\n");
@@ -104,13 +126,10 @@ void isr_handler(void)
 
     terminal_setcolor(vga_entry_color(VGA_COLOR_LIGHT_CYAN, VGA_COLOR_BLACK));
     if (int_no < 32)
-    {
         terminal_writestring(exception_messages[int_no]);
-    }
     else
-    {
         terminal_writestring("Unknown Exception");
-    }
+
     terminal_writestring("\n");
 
     terminal_setcolor(vga_entry_color(VGA_COLOR_WHITE, VGA_COLOR_BLACK));
