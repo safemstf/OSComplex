@@ -233,3 +233,19 @@ void terminal_write_dec(uint32_t n)
     itoa(n, buffer);
     terminal_writestring(buffer);
 }
+
+void terminal_write_hex(uint32_t value)
+{
+    char buffer[11]; // "0x" + 8 hex digits + null
+    buffer[0] = '0';
+    buffer[1] = 'x';
+
+    for (int i = 0; i < 8; i++)
+    {
+        uint8_t nibble = (value >> ((7 - i) * 4)) & 0xF;
+        buffer[2 + i] = (nibble < 10) ? ('0' + nibble) : ('A' + nibble - 10);
+    }
+
+    buffer[10] = '\0';
+    terminal_writestring(buffer);
+}

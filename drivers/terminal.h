@@ -9,6 +9,7 @@ void terminal_putchar(char c);
 void terminal_writestring(const char* data);
 void terminal_setcolor(uint8_t color);
 void terminal_write_dec(uint32_t n);
+void terminal_write_hex(uint32_t value);
 
 uint8_t vga_entry_color(enum vga_color fg, enum vga_color bg);
 uint16_t vga_entry(unsigned char c, uint8_t color);

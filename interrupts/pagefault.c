@@ -1,155 +1,122 @@
-/* interrupts/pagefault.c - Page fault handler
- * 
- * Handles page faults with recovery for demand paging.
+/* interrupts/pagefault.c - ABI-CORRECT VERSION
+ *
+ * Matches the CURRENT working ISR stack layout exactly.
+ * NO structs. NO assumptions. NO magic.
  */
 
 #include "../kernel/kernel.h"
 #include "../mm/vmm.h"
 #include "../mm/pmm.h"
+#include "../drivers/terminal.h"
 
 /* Page fault error code bits */
-#define PF_PRESENT     0x01  /* 0 = not present, 1 = protection violation */
-#define PF_WRITE       0x02  /* 0 = read, 1 = write */
-#define PF_USER        0x04  /* 0 = kernel, 1 = user */
-#define PF_RESERVED    0x08  /* 1 = reserved bit violation */
-#define PF_INSTRUCTION 0x10  /* 1 = instruction fetch */
+#define PF_PRESENT     0x01
+#define PF_WRITE       0x02
+#define PF_USER        0x04
+#define PF_RESERVED    0x08
+#define PF_INSTRUCTION 0x10
 
-/* Helper to print hex without using printf */
-static void print_hex(uint32_t val) {
-    terminal_writestring("0x");
-    char buf[16];
-    utoa(val, buf, 16);
-    terminal_writestring(buf);
-}
+/* Stack layout indices (from ESP in isr_handler) */
+#define STACK_INT_NO   13
+#define STACK_ERRCODE  14
+#define STACK_EIP      15
+#define STACK_CS       16
+#define STACK_EFLAGS   17
 
-/* Page fault handler */
-void page_fault_handler(uint32_t *stack_ptr) {
-    /* Get faulting address from CR2 */
+void page_fault_handler(uint32_t *stack_ptr)
+{
     uint32_t fault_addr;
     asm volatile("mov %%cr2, %0" : "=r"(fault_addr));
-    
-    uint32_t err_code = stack_ptr[14];  /* Error code from stack */
-    uint32_t eip = stack_ptr[15];       /* EIP from stack */
-    
-    /* Display fault information */
+
+    uint32_t err_code = stack_ptr[STACK_ERRCODE];
+    uint32_t eip      = stack_ptr[STACK_EIP];
+
     terminal_setcolor(vga_entry_color(VGA_COLOR_LIGHT_RED, VGA_COLOR_BLACK));
     terminal_writestring("\n[PAGE FAULT] ");
-    
-    /* Describe the fault */
-    if (err_code & PF_PRESENT) {
+
+    /* Decode fault type */
+    if (err_code & PF_PRESENT)
         terminal_writestring("Protection violation");
-    } else {
+    else
         terminal_writestring("Page not present");
-    }
-    
-    if (err_code & PF_WRITE) {
+
+    if (err_code & PF_WRITE)
         terminal_writestring(" (write)");
-    } else {
+    else
         terminal_writestring(" (read)");
-    }
-    
-    if (err_code & PF_USER) {
-        terminal_writestring(" [user mode]");
-    } else {
-        terminal_writestring(" [kernel mode]");
-    }
-    
+
+    if (err_code & PF_USER)
+        terminal_writestring(" [user]");
+    else
+        terminal_writestring(" [kernel]");
+
+    terminal_writestring("\nFault address: 0x");
+    terminal_write_hex(fault_addr);
     terminal_writestring("\n");
-    
-    terminal_setcolor(vga_entry_color(VGA_COLOR_WHITE, VGA_COLOR_BLACK));
-    terminal_writestring("Fault address: ");
-    print_hex(fault_addr);
-    terminal_writestring("\n");
-    
-    terminal_writestring("Error code: ");
-    print_hex(err_code);
-    terminal_writestring("\n");
-    
-    terminal_writestring("EIP: ");
-    print_hex(eip);
-    terminal_writestring("\n\n");
-    
-    /* ================================================================
-     * ATTEMPT RECOVERY
-     * ================================================================ */
-    
-    /* Case 1: Page not present in mapped region - try to allocate */
-    if (!(err_code & PF_PRESENT)) {
-        /* Check if fault is in kernel heap */
-        if (fault_addr >= KERNEL_HEAP_START && fault_addr < KERNEL_HEAP_END) {
-            void* phys_page = pmm_alloc_block();
-            if (phys_page) {
-                uint32_t page_addr = fault_addr & ~0xFFF;
-                vmm_map_page(page_addr, (uint32_t)phys_page, 
-                           VMM_PRESENT | VMM_WRITE);
-                
-                memset((void*)page_addr, 0, PAGE_SIZE);
-                
+
+    /* ============================================================
+     * Attempt recovery: non-present page only
+     * ============================================================ */
+    if (!(err_code & PF_PRESENT))
+    {
+        uint32_t page_addr = fault_addr & ~0xFFF;
+
+        /* Kernel heap */
+        if (fault_addr >= KERNEL_HEAP_START && fault_addr < KERNEL_HEAP_END)
+        {
+            void *phys = pmm_alloc_block();
+            if (phys)
+            {
+                vmm_map_page(
+                    page_addr,
+                    (uint32_t)phys,
+                    VMM_PRESENT | VMM_WRITE
+                );
+
+                memset((void *)page_addr, 0, PAGE_SIZE);
+
                 terminal_setcolor(vga_entry_color(VGA_COLOR_LIGHT_GREEN, VGA_COLOR_BLACK));
-                terminal_writestring("[PAGE FAULT] Recovered - kernel heap page allocated\n");
+                terminal_writestring("[PAGE FAULT] ✓ Kernel page allocated\n");
                 terminal_setcolor(vga_entry_color(VGA_COLOR_WHITE, VGA_COLOR_BLACK));
                 return;
             }
         }
-        
-        /* Check if fault is in user space (future) */
-        if (fault_addr >= 0x10000000 && fault_addr < 0xC0000000) {
-            void* phys_page = pmm_alloc_block();
-            if (phys_page) {
-                uint32_t page_addr = fault_addr & ~0xFFF;
-                vmm_map_page(page_addr, (uint32_t)phys_page, 
-                           VMM_PRESENT | VMM_WRITE | VMM_USER);
-                
-                memset((void*)page_addr, 0, PAGE_SIZE);
-                
+
+        /* User space */
+        if (fault_addr >= 0x10000000 && fault_addr < 0xC0000000)
+        {
+            void *phys = pmm_alloc_block();
+            if (phys)
+            {
+                vmm_map_page(
+                    page_addr,
+                    (uint32_t)phys,
+                    VMM_PRESENT | VMM_WRITE | VMM_USER
+                );
+
+                memset((void *)page_addr, 0, PAGE_SIZE);
+
                 terminal_setcolor(vga_entry_color(VGA_COLOR_LIGHT_GREEN, VGA_COLOR_BLACK));
-                terminal_writestring("[PAGE FAULT] Recovered - user page allocated\n");
+                terminal_writestring("[PAGE FAULT] ✓ User page allocated\n");
                 terminal_setcolor(vga_entry_color(VGA_COLOR_WHITE, VGA_COLOR_BLACK));
                 return;
             }
         }
     }
-    
-    /* Case 2: Write to read-only page (future: copy-on-write) */
-    if ((err_code & PF_PRESENT) && (err_code & PF_WRITE)) {
-        terminal_setcolor(vga_entry_color(VGA_COLOR_LIGHT_CYAN, VGA_COLOR_BLACK));
-        terminal_writestring("[PAGE FAULT] Write to read-only page (COW not implemented)\n");
-        terminal_setcolor(vga_entry_color(VGA_COLOR_WHITE, VGA_COLOR_BLACK));
-    }
-    
-    /* ================================================================
-     * UNRECOVERABLE - PANIC
-     * ================================================================ */
-    
+
+    /* ============================================================
+     * UNRECOVERABLE FAULT
+     * ============================================================ */
     terminal_setcolor(vga_entry_color(VGA_COLOR_LIGHT_RED, VGA_COLOR_BLACK));
     terminal_writestring("\n╔══════════════════════════════════════════════════════════╗\n");
-    terminal_writestring("║                  KERNEL PANIC                            ║\n");
-    terminal_writestring("║              Unhandled Page Fault                        ║\n");
+    terminal_writestring("║             UNHANDLED PAGE FAULT - PANIC                 ║\n");
     terminal_writestring("╚══════════════════════════════════════════════════════════╝\n");
-    
+
     terminal_setcolor(vga_entry_color(VGA_COLOR_WHITE, VGA_COLOR_BLACK));
-    terminal_writestring("\nRegister dump:\n");
-    terminal_writestring("EAX="); print_hex(stack_ptr[12]);
-    terminal_writestring(" EBX="); print_hex(stack_ptr[9]);
-    terminal_writestring(" ECX="); print_hex(stack_ptr[11]);
-    terminal_writestring(" EDX="); print_hex(stack_ptr[10]);
-    terminal_writestring("\n");
-    terminal_writestring("ESI="); print_hex(stack_ptr[6]);
-    terminal_writestring(" EDI="); print_hex(stack_ptr[5]);
-    terminal_writestring(" EBP="); print_hex(stack_ptr[7]);
-    terminal_writestring(" ESP="); print_hex(stack_ptr[8]);
-    terminal_writestring("\n");
-    terminal_writestring("EIP="); print_hex(eip);
-    terminal_writestring(" EFLAGS="); print_hex(stack_ptr[17]);
-    terminal_writestring("\n");
-    terminal_writestring("CS="); print_hex(stack_ptr[16]);
-    terminal_writestring(" DS="); print_hex(stack_ptr[4]);
-    terminal_writestring("\n\n");
-    
-    terminal_writestring("System halted.\n");
-    
-    /* Halt */
-    while (1) {
+    terminal_writestring("\nEIP: 0x");
+    terminal_write_hex(eip);
+    terminal_writestring("\nSystem halted.\n");
+
+    while (1)
         __asm__ volatile("cli; hlt");
-    }
 }

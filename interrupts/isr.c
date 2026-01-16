@@ -1,9 +1,14 @@
-/* interrupts/isr.c - Interrupt Service Routine handlers
- * UPDATED: Added page fault handler routing
+/* interrupts/isr.c - ISR handlers (safe drop-in)
+ * Minimal improvements only: macros, prototypes, no ABI changes.
  */
 
 #include "../kernel/kernel.h"
 
+/* Forward declarations (from other C files) to avoid implicit declarations */
+extern void page_fault_handler(uint32_t *stack_ptr);  /* keeps your existing PF handler signature */
+extern void pic_send_eoi(uint8_t irq);                /* from drivers/pic.c */
+
+/* Keep your exception messages exactly as before */
 static const char *exception_messages[] = {
     "Division By Zero",
     "Debug",
@@ -29,9 +34,10 @@ static const char *exception_messages[] = {
     "Control Protection Exception",
     "Reserved", "Reserved", "Reserved", "Reserved",
     "Reserved", "Reserved", "Reserved", "Reserved",
-    "Reserved", "Reserved"};
+    "Reserved", "Reserved"
+};
 
-/* Helper: Print a hex digit */
+/* --- small helpers for hex/decimal printing (unchanged semantics) --- */
 static void print_hex_digit(uint8_t val)
 {
     if (val < 10)
@@ -40,7 +46,6 @@ static void print_hex_digit(uint8_t val)
         terminal_putchar('A' + val - 10);
 }
 
-/* Helper: Print 32-bit value in hex */
 static void print_hex32(uint32_t val)
 {
     terminal_writestring("0x");
@@ -50,7 +55,6 @@ static void print_hex32(uint32_t val)
     }
 }
 
-/* Helper: Print decimal value */
 static void print_dec(uint32_t val)
 {
     if (val >= 100)
@@ -60,19 +64,24 @@ static void print_dec(uint32_t val)
     terminal_putchar('0' + val % 10);
 }
 
-/* Forward declaration of page fault handler */
-extern void page_fault_handler(uint32_t *stack_ptr);
+/* --- Accessor macros that encapsulate the magic indices.
+   Keep these so you can switch to a struct later by editing just these
+   macros (no assembly changes needed). --- */
+#define STACK_INTNO(sp)   ((sp)[13])
+#define STACK_ERRCODE(sp) ((sp)[14])
+#define STACK_EIP(sp)     ((sp)[15])
+#define STACK_CS(sp)      ((sp)[16])
 
-/* CPU Exception Handler */
+/* CPU Exception Handler (keeps original signature and behavior) */
 void isr_handler(void)
 {
     uint32_t *stack_ptr;
     __asm__ volatile("mov %%esp, %0" : "=r"(stack_ptr));
 
-    uint32_t int_no = stack_ptr[13];
-    uint32_t err_code = stack_ptr[14];
+    uint32_t int_no = STACK_INTNO(stack_ptr);
+    uint32_t err_code = STACK_ERRCODE(stack_ptr);
 
-    /* SPECIAL CASE: Page fault (#14) - try to recover */
+    /* SPECIAL CASE: Page fault (#14) - forward to your handler */
     if (int_no == 14)
     {
         page_fault_handler(stack_ptr);
@@ -110,9 +119,9 @@ void isr_handler(void)
     terminal_writestring("\n");
 
     terminal_writestring("EIP: ");
-    print_hex32(stack_ptr[15]);
+    print_hex32(STACK_EIP(stack_ptr));
     terminal_writestring("  CS: ");
-    print_hex32(stack_ptr[16]);
+    print_hex32(STACK_CS(stack_ptr));
     terminal_writestring("\n");
 
     terminal_writestring("\nSystem halted.\n");
@@ -121,7 +130,7 @@ void isr_handler(void)
         __asm__ volatile("hlt");
 }
 
-/* IRQ handler function pointers */
+/* IRQ handler function pointers (unchanged) */
 static interrupt_handler_t irq_handlers[16];
 
 void irq_install_handler(uint8_t irq, interrupt_handler_t handler)
@@ -140,10 +149,10 @@ void irq_uninstall_handler(uint8_t irq)
     }
 }
 
-/* IRQ handler C wrapper */
+/* IRQ handler C wrapper (keeps original ABI exactly) */
 void irq_handler_c(uint32_t *stack_ptr)
 {
-    uint32_t int_no = stack_ptr[13];
+    uint32_t int_no = STACK_INTNO(stack_ptr);
 
     /* Ensure valid IRQ range */
     if (int_no < 32 || int_no > 47)
@@ -154,7 +163,7 @@ void irq_handler_c(uint32_t *stack_ptr)
 
     uint8_t irq = int_no - 32;
 
-    /* Execute handler */
+    /* Execute handler if installed */
     if (irq_handlers[irq])
     {
         irq_handlers[irq]();
@@ -164,7 +173,7 @@ void irq_handler_c(uint32_t *stack_ptr)
     pic_send_eoi(irq);
 }
 
-/* IRQ handler entry (naked) */
+/* IRQ handler entry (naked) - unchanged (keeps your working stub) */
 __attribute__((naked)) void irq_handler(void)
 {
     __asm__ volatile(

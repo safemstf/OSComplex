@@ -1,0 +1,19 @@
+{
+    "configurations": [
+        {
+            "name": "Kernel-GCC",
+            "includePath": [
+                "${workspaceFolder}/**"
+            ],
+            "defines": [
+                "__GNUC__",
+                "__KERNEL__"
+            ],
+            "compilerPath": "C:\\msys64\\ucrt64\\bin\\gcc.exe",
+            "cStandard": "gnu11",
+            "cppStandard": "gnu++17",
+            "intelliSenseMode": "gcc-x86"
+        }
+    ],
+    "version": 4
+}

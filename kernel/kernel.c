@@ -4,6 +4,7 @@
  */
 
 #include "kernel.h"
+#include "fpu.h"
 
 /* Linker symbols */
 extern uint8_t kernel_start;
@@ -30,6 +31,8 @@ void kernel_main(void) {
     terminal_writestring("║           An AI-Native Operating System                 ║\n");
     terminal_writestring("╚══════════════════════════════════════════════════════════╝\n\n");
     terminal_writestring("[KERNEL] Booting LinuxComplex...\n");
+
+    fpu_init();
 
     /* =========================================================
      * Step 2: Physical Memory Manager
