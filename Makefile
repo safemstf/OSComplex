@@ -1,4 +1,4 @@
-# Makefile for LinuxComplex - AI-Native Operating System
+# Makefile for OSComplex - AI-Native Operating System
 
 # ============================================================
 # TOOLCHAIN CONFIGURATION
@@ -23,7 +23,7 @@ LDFLAGS = -n -T linker.ld -nostdlib
 # ============================================================
 # OUTPUT FILES
 # ============================================================
-KERNEL = linuxcomplex.bin
+KERNEL = OSComplex.bin
 
 # ============================================================
 # SOURCE FILES (organized by directory)
@@ -60,7 +60,7 @@ OBJS = $(BOOT_OBJ) $(INT_OBJ) $(DRIVER_OBJ) $(KERNEL_OBJ) $(LIB_OBJ) $(AI_OBJ) $
 all: $(KERNEL)
 	@echo ""
 	@echo "╔════════════════════════════════════════╗"
-	@echo "║   LinuxComplex Build Complete! 🚀     ║"
+	@echo "║   OSComplex Build Complete! 🚀     ║"
 	@echo "╚════════════════════════════════════════╝"
 	@echo ""
 	@echo "Run with: make run"
@@ -97,7 +97,7 @@ $(KERNEL): $(KERNEL).elf
 run: $(KERNEL)
 	@echo ""
 	@echo "╔════════════════════════════════════════╗"
-	@echo "║     Launching LinuxComplex! 🚀        ║"
+	@echo "║     Launching OSComplex! 🚀        ║"
 	@echo "╚════════════════════════════════════════╝"
 	@echo ""
 	@echo "Press Ctrl+Alt+G to release mouse"
@@ -122,7 +122,7 @@ clean:
 	@echo "[✓] Clean complete"
 
 info:
-	@echo "=== LinuxComplex Build Configuration ==="
+	@echo "=== OSComplex Build Configuration ==="
 	@echo "Compiler: $(CC)"
 	@echo "Assembler: $(AS)"
 	@echo "Linker: $(LD)"

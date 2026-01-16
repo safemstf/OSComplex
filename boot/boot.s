@@ -1,4 +1,4 @@
-/* boot/boot.s - Multiboot bootloader for LinuxComplex
+/* boot/boot.s - Multiboot bootloader for OSComplex
  * Provides entry point and stack setup for kernel initialization
  */
 

@@ -1,6 +1,6 @@
 /* shell/shell.c - Interactive command shell with AI assistance
  *
- * This is the user-facing interface to LinuxComplex. It provides:
+ * This is the user-facing interface to OSComplex. It provides:
  * - Command-line interface (like bash, zsh, etc.)
  * - AI-powered autocomplete and suggestions
  * - Built-in commands
@@ -57,13 +57,13 @@ static void cmd_help(void)
 {
     terminal_setcolor(vga_entry_color(VGA_COLOR_LIGHT_GREEN, VGA_COLOR_BLACK));
     terminal_writestring("\n╔══════════════════════════════════════════════════════════╗\n");
-    terminal_writestring("║           LinuxComplex - Available Commands             ║\n");
+    terminal_writestring("║           OSComplex - Available Commands             ║\n");
     terminal_writestring("╚══════════════════════════════════════════════════════════╝\n\n");
 
     terminal_setcolor(vga_entry_color(VGA_COLOR_WHITE, VGA_COLOR_BLACK));
     terminal_writestring("  help        - Show this help message\n");
     terminal_writestring("  clear       - Clear the screen\n");
-    terminal_writestring("  about       - About LinuxComplex\n");
+    terminal_writestring("  about       - About OSComplex\n");
     terminal_writestring("  ai          - Show AI learning statistics\n");
     terminal_writestring("  echo <text> - Display text\n");
     terminal_writestring("  meminfo     - Show physical memory usage\n");
@@ -82,13 +82,13 @@ static void cmd_help(void)
 }
 
 /* Built-in command: about
- * Information about LinuxComplex */
+ * Information about OSComplex */
 static void cmd_about(void)
 {
     terminal_writestring("\n");
     terminal_setcolor(vga_entry_color(VGA_COLOR_LIGHT_MAGENTA, VGA_COLOR_BLACK));
     terminal_writestring("╔══════════════════════════════════════════════════════════╗\n");
-    terminal_writestring("║              LinuxComplex v0.1-alpha                     ║\n");
+    terminal_writestring("║              OSComplex v0.1-alpha                     ║\n");
     terminal_writestring("║           An AI-Native Operating System                 ║\n");
     terminal_writestring("╚══════════════════════════════════════════════════════════╝\n\n");
 

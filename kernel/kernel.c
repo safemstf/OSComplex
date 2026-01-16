@@ -27,10 +27,10 @@ void kernel_main(void) {
     terminal_initialize();
 
     terminal_writestring("╔══════════════════════════════════════════════════════════╗\n");
-    terminal_writestring("║              LinuxComplex v0.1-alpha                     ║\n");
+    terminal_writestring("║              OSComplex v0.1-alpha                     ║\n");
     terminal_writestring("║           An AI-Native Operating System                 ║\n");
     terminal_writestring("╚══════════════════════════════════════════════════════════╝\n\n");
-    terminal_writestring("[KERNEL] Booting LinuxComplex...\n");
+    terminal_writestring("[KERNEL] Booting OSComplex...\n");
 
     fpu_init();
 
