@@ -6,6 +6,7 @@
 
 #include "kernel.h"
 #include "../mm/pmm.h"
+#include "../mm/paging.h"
 #include "../lib/string.h"
 
 /* Linker-provided symbols (defined in linker.ld) */
@@ -13,16 +14,19 @@ extern uint8_t kernel_start;
 extern uint8_t kernel_end;
 
 /* Simple helpers */
-static inline uint32_t align_down(uint32_t addr) {
+static inline uint32_t align_down(uint32_t addr)
+{
     return addr & ~(PAGE_SIZE - 1);
 }
 
-static inline uint32_t align_up(uint32_t addr) {
+static inline uint32_t align_up(uint32_t addr)
+{
     return (addr + PAGE_SIZE - 1) & ~(PAGE_SIZE - 1);
 }
 
 /* Kernel entry point */
-void kernel_main(void) {
+void kernel_main(void)
+{
     /* =========================================================
      * Step 1: Terminal initialization
      * ========================================================= */
@@ -47,17 +51,22 @@ void kernel_main(void) {
     pmm_init(MEMORY_LIMIT);
 
     /* Free all memory above 1MB (conservative early-kernel policy) */
-    pmm_init_region((void*)0x100000, MEMORY_LIMIT - 0x100000);
+    pmm_init_region((void *)0x100000, MEMORY_LIMIT - 0x100000);
 
     /* Reserve kernel image */
     uint32_t kstart = align_down((uint32_t)&kernel_start);
-    uint32_t kend   = align_up((uint32_t)&kernel_end);
-    uint32_t ksize  = kend - kstart;
+    uint32_t kend = align_up((uint32_t)&kernel_end);
+    uint32_t ksize = kend - kstart;
 
-    pmm_deinit_region((void*)kstart, ksize);
+    pmm_deinit_region((void *)kstart, ksize);
 
     terminal_writestring("[PMM] Kernel memory reserved\n");
     terminal_writestring("[PMM] Physical memory manager ready\n\n");
+
+    /* Step 2.5: Enable paging */
+    terminal_writestring("[PAGING] Setting up identity-mapped paging...\n");
+    paging_init();
+    terminal_writestring("[PAGING] Paging enabled\n\n");
 
     /* =========================================================
      * Step 3: Interrupt Descriptor Table
@@ -115,7 +124,8 @@ void kernel_main(void) {
     terminal_setcolor(vga_entry_color(VGA_COLOR_LIGHT_RED, VGA_COLOR_BLACK));
     terminal_writestring("[KERNEL] Fatal: shell returned unexpectedly\n");
 
-    while (1) {
+    while (1)
+    {
         __asm__ volatile("cli; hlt");
     }
 }

@@ -27,6 +27,7 @@
 
 #define VGA_WIDTH 80
 #define VGA_HEIGHT 25
+#define PAGE_SIZE 4096
 
 /* VGA hardware color palette (16 colors available) */
 enum vga_color {

@@ -36,7 +36,7 @@ KERNEL_C = kernel/kernel.c
 LIB_C = lib/string.c
 AI_C = ai/ai.c
 SHELL_C = shell/shell.c
-MM_C = mm/pmm.c
+MM_C = mm/pmm.c mm/paging.c
 
 # ============================================================
 # OBJECT FILES
