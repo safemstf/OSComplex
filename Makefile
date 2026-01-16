@@ -36,6 +36,7 @@ KERNEL_C = kernel/kernel.c
 LIB_C = lib/string.c
 AI_C = ai/ai.c
 SHELL_C = shell/shell.c
+MM_C = mm/pmm.c
 
 # ============================================================
 # OBJECT FILES
@@ -47,8 +48,9 @@ KERNEL_OBJ = $(KERNEL_C:.c=.o)
 LIB_OBJ = $(LIB_C:.c=.o)
 AI_OBJ = $(AI_C:.c=.o)
 SHELL_OBJ = $(SHELL_C:.c=.o)
+MM_OBJ = $(MM_C:.c=.o)
 
-OBJS = $(BOOT_OBJ) $(INT_OBJ) $(DRIVER_OBJ) $(KERNEL_OBJ) $(LIB_OBJ) $(AI_OBJ) $(SHELL_OBJ)
+OBJS = $(BOOT_OBJ) $(INT_OBJ) $(DRIVER_OBJ) $(KERNEL_OBJ) $(LIB_OBJ) $(AI_OBJ) $(SHELL_OBJ) $(MM_OBJ)
 
 # ============================================================
 # BUILD TARGETS
