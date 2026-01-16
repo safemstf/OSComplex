@@ -1,50 +1,48 @@
 ENTRY(_start)
 OUTPUT_FORMAT(elf32-i386)
 
+PHDRS
+{
+    text PT_LOAD FLAGS(5); /* R + X */
+    data PT_LOAD FLAGS(6); /* R + W */
+}
+
 SECTIONS
 {
-    /* Physical address where bootloader loads us */
     . = 0x100000;
 
-    /* Keep track of start of kernel */
     kernel_start = .;
 
-    /* Multiboot header and boot code MUST come first */
     .boot :
     {
         *(.multiboot)
         *(.multiboot.*)
-    }
+    } :text
 
-    /* Code - immediately after multiboot header */
     .text ALIGN(4) :
     {
         *(.text)
         *(.text.*)
-    }
+    } :text
 
-    /* Read-only data */
     .rodata ALIGN(4096) :
     {
         *(.rodata)
         *(.rodata.*)
-    }
+    } :text
 
-    /* Initialized data */
     .data ALIGN(4096) :
     {
         *(.data)
         *(.data.*)
-    }
+    } :data
 
-    /* Uninitialized data */
     .bss ALIGN(4096) :
     {
         *(COMMON)
         *(.bss)
         *(.bss.*)
-    }
+    } :data
 
-    /* Mark end of kernel */
     kernel_end = .;
 }

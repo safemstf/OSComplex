@@ -1,6 +1,5 @@
-/* interrupts/isr.c - Interrupt Service Routine handlers (FIXED)
- *
- * FIX: Added hex output and proper stack offset handling
+/* interrupts/isr.c - Interrupt Service Routine handlers
+ * UPDATED: Added page fault handler routing
  */
 
 #include "../kernel/kernel.h"
@@ -61,35 +60,26 @@ static void print_dec(uint32_t val)
     terminal_putchar('0' + val % 10);
 }
 
+/* Forward declaration of page fault handler */
+extern void page_fault_handler(uint32_t *stack_ptr);
+
 /* CPU Exception Handler */
 void isr_handler(void)
 {
     uint32_t *stack_ptr;
     __asm__ volatile("mov %%esp, %0" : "=r"(stack_ptr));
 
-    /* Stack layout after isr_common_stub:
-     * [0]  = return address
-     * [1]  = GS
-     * [2]  = FS
-     * [3]  = ES
-     * [4]  = DS
-     * [5]  = EDI (pusha)
-     * [6]  = ESI
-     * [7]  = EBP
-     * [8]  = original ESP
-     * [9]  = EBX
-     * [10] = EDX
-     * [11] = ECX
-     * [12] = EAX
-     * [13] = interrupt number
-     * [14] = error code
-     * [15] = EIP (from CPU)
-     * [16] = CS
-     * [17] = EFLAGS
-     */
     uint32_t int_no = stack_ptr[13];
     uint32_t err_code = stack_ptr[14];
 
+    /* SPECIAL CASE: Page fault (#14) - try to recover */
+    if (int_no == 14)
+    {
+        page_fault_handler(stack_ptr);
+        return; /* If it returns, recovery succeeded */
+    }
+
+    /* All other exceptions are fatal */
     terminal_setcolor(vga_entry_color(VGA_COLOR_LIGHT_RED, VGA_COLOR_BLACK));
     terminal_writestring("\n\n");
     terminal_writestring("╔══════════════════════════════════════════════════════════╗\n");
@@ -150,36 +140,35 @@ void irq_uninstall_handler(uint8_t irq)
     }
 }
 
-/* Forward declaration */
+/* IRQ handler C wrapper */
 void irq_handler_c(uint32_t *stack_ptr)
 {
     uint32_t int_no = stack_ptr[13];
 
-    /* 1. Ensure it's a valid IRQ range */
+    /* Ensure valid IRQ range */
     if (int_no < 32 || int_no > 47)
     {
-        // ... (Error handling remains the same)
         pic_send_eoi(0);
         return;
     }
 
     uint8_t irq = int_no - 32;
 
-    /* 2. Execute the specific driver handler (e.g., keyboard_handler) */
+    /* Execute handler */
     if (irq_handlers[irq])
     {
         irq_handlers[irq]();
     }
 
-    /* 3. Send End of Interrupt to the PIC */
+    /* Send EOI */
     pic_send_eoi(irq);
 }
 
-/* IRQ handler entry – MUST be naked */
+/* IRQ handler entry (naked) */
 __attribute__((naked)) void irq_handler(void)
 {
     __asm__ volatile(
-        "mov %esp, %eax\n" /* eax = pointer to IRQ stack frame */
+        "mov %esp, %eax\n"
         "push %eax\n"
         "call irq_handler_c\n"
         "add $4, %esp\n"

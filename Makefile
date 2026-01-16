@@ -30,13 +30,13 @@ KERNEL = linuxcomplex.bin
 # ============================================================
 BOOT_ASM = boot/boot.s
 INT_ASM = interrupts/interrupts.s
-INT_C = interrupts/idt.c interrupts/isr.c
+INT_C = interrupts/idt.c interrupts/isr.c interrupts/pagefault.c
 DRIVER_C = drivers/terminal.c drivers/keyboard.c drivers/pic.c
 KERNEL_C = kernel/kernel.c
 LIB_C = lib/string.c
 AI_C = ai/ai.c
 SHELL_C = shell/shell.c
-MM_C = mm/pmm.c mm/paging.c mm/heap.c
+MM_C = mm/pmm.c mm/paging.c mm/heap.c mm/vmm.c
 
 # ============================================================
 # OBJECT FILES

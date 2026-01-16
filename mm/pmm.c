@@ -1,5 +1,6 @@
 #include "pmm.h"
 #include "../lib/string.h"
+#include "../kernel/kernel.h"
 
 /*
  * Each bit represents one 4KB page.
