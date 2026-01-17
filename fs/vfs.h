@@ -321,6 +321,7 @@ int vfs_unlink(const char *path);
  * and handles mount points.
  */
 vfs_node_t *vfs_resolve_path(const char *path);
+vfs_node_t *vfs_open_path(const char *path);
 
 /* ====================================================================
  * MOUNT OPERATIONS

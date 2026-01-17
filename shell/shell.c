@@ -10,6 +10,7 @@
 #include "../kernel/scheduler.h"
 #include "../kernel/task.h"
 #include "test_tasks.h"
+#include "../fs/vfs.h"
 
 #define SHELL_BUFFER_SIZE 256
 #define SHELL_PROMPT "complex> "
@@ -312,6 +313,65 @@ static void cmd_halt(void)
     __asm__ volatile("cli; hlt");
 }
 
+static void cmd_ls(const char *path)
+{
+    vfs_node_t *dir;
+
+    if (!path || !*path) {
+        dir = vfs_cwd;
+    } else {
+        dir = vfs_open_path(path);
+    }
+
+    if (!dir || dir->type != VFS_DIRECTORY) {
+        terminal_writestring("ls: not a directory\n");
+        return;
+    }
+
+    for (uint32_t i = 0;; i++) {
+        dirent_t *ent = dir->ops->readdir(dir, i);
+        if (!ent) break;
+
+        terminal_writestring(ent->name);
+        terminal_writestring("  ");
+    }
+
+    terminal_writestring("\n");
+}
+
+static void cmd_pwd(void)
+{
+    const char *cwd = vfs_getcwd();
+    if (cwd) {
+        terminal_writestring(cwd);
+        terminal_writestring("\n");
+    }
+}
+
+static void cmd_cd(const char *path)
+{
+    if (!path || !*path) {
+        terminal_writestring("cd: missing operand\n");
+        return;
+    }
+
+    if (vfs_chdir(path) < 0) {
+        terminal_writestring("cd: no such directory\n");
+    }
+}
+
+static void cmd_mkdir(const char *path)
+{
+    if (!path || !*path) {
+        terminal_writestring("mkdir: missing operand\n");
+        return;
+    }
+
+    if (vfs_mkdir(path, S_IRWXU) < 0) {
+        terminal_writestring("mkdir: failed\n");
+    }
+}
+
 static void shell_execute_command(const char *cmd)
 {
     if (!cmd || !*cmd) return;
@@ -334,6 +394,15 @@ static void shell_execute_command(const char *cmd)
     else if (strcmp(cmd, "sched") == 0)   { cmd_sched(); success = true; }
     else if (strcmp(cmd, "spawn") == 0)   { cmd_spawn(); success = true; }
     else if (strcmp(cmd, "halt") == 0)    { cmd_halt(); }
+
+    // vfs cmds
+    else if (strcmp(cmd, "ls") == 0)           { cmd_ls(NULL); success = true; }
+    else if (strncmp(cmd, "ls ", 3) == 0)      { cmd_ls(args); success = true; }
+    else if (strcmp(cmd, "pwd") == 0)          { cmd_pwd(); success = true; }
+    else if (strncmp(cmd, "cd ", 3) == 0)      { cmd_cd(args); success = true; }
+    else if (strncmp(cmd, "mkdir ", 6) == 0)   { cmd_mkdir(args); success = true; }
+
+
     else {
         terminal_setcolor(vga_entry_color(VGA_COLOR_LIGHT_RED, VGA_COLOR_BLACK));
         terminal_writestring("Unknown command: ");

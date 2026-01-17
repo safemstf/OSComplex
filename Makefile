@@ -37,7 +37,7 @@ LIB_C = lib/string.c
 AI_C = ai/ai.c
 SHELL_C = shell/shell.c shell/test_tasks.c
 MM_C = mm/pmm.c mm/paging.c mm/heap.c mm/vmm.c
-FS_C = fs/vfs.c
+FS_C = fs/vfs.c fs/ramfs.c
 
 
 # ============================================================

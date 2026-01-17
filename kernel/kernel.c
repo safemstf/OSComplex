@@ -11,6 +11,7 @@
 #include "scheduler.h"
 
 #include "../fs/vfs.h"
+#include "../fs/ramfs.h"
 
 /* Linker symbols */
 extern uint8_t kernel_start;
@@ -138,7 +139,12 @@ void kernel_main(void)
      * ========================================================= */
     terminal_writestring("[VFS] Initializing virtual file system...\n");
     vfs_init();
-    terminal_writestring("[VFS] Virtual file system ready\n\n");
+
+    /* Mount root filesystem */
+    terminal_writestring("[RAMFS] Initializing RAM filesystem...\n");
+    ramfs_init();
+
+    terminal_writestring("[VFS] Root filesystem mounted\n\n");
 
     /* =========================================================
      * Step 12: AI subsystem

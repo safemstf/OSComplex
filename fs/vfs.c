@@ -213,6 +213,13 @@ vfs_node_t *vfs_resolve_path(const char *path)
     return current;
 }
 
+
+// allows for ls with the return
+vfs_node_t *vfs_open_path(const char *path)
+{
+    return vfs_resolve_path(path);
+}
+
 /* ====================================================================
  * FILE OPERATIONS
  * ==================================================================== */
