@@ -11,6 +11,7 @@
 #include <stddef.h>
 #include <stdbool.h>
 #include <stdarg.h>
+#include "syscall.h"
 
 /* Timer */
 void timer_init(void);

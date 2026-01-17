@@ -123,6 +123,7 @@ void kernel_main(void) {
     terminal_writestring("[KERNEL] Initializing multitasking...\n");
     task_init();
     scheduler_init();
+    syscall_init(); 
     terminal_writestring("[KERNEL] Multitasking ready\n\n");
 
     /* =========================================================

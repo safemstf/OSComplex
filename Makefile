@@ -29,13 +29,13 @@ KERNEL = OSComplex.bin
 # SOURCE FILES (organized by directory)
 # ============================================================
 BOOT_ASM = boot/boot.s
-INT_ASM = interrupts/interrupts.s
+INT_ASM = interrupts/interrupts.s interrupts/syscall.s
 INT_C = interrupts/idt.c interrupts/isr.c interrupts/pagefault.c
 DRIVER_C = drivers/terminal.c drivers/keyboard.c drivers/pic.c drivers/timer.c
-KERNEL_C = kernel/kernel.c kernel/fpu.c kernel/task.c kernel/scheduler.c
+KERNEL_C = kernel/kernel.c kernel/fpu.c kernel/task.c kernel/scheduler.c kernel/syscall.c
 LIB_C = lib/string.c
 AI_C = ai/ai.c
-SHELL_C = shell/shell.c
+SHELL_C = shell/shell.c shell/test_tasks.c
 MM_C = mm/pmm.c mm/paging.c mm/heap.c mm/vmm.c
 
 # ============================================================
