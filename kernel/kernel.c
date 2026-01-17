@@ -1,10 +1,12 @@
 /* kernel/kernel.c - Main kernel initialization
  * 
- * FIXED: Proper initialization order - VMM before heap!
+ * UPDATED: Added task management and scheduler initialization
  */
 
 #include "kernel.h"
 #include "fpu.h"
+#include "task.h"
+#include "scheduler.h"
 
 /* Linker symbols */
 extern uint8_t kernel_start;
@@ -27,7 +29,7 @@ void kernel_main(void) {
     terminal_initialize();
 
     terminal_writestring("╔══════════════════════════════════════════════════════════╗\n");
-    terminal_writestring("║              OSComplex v0.1-alpha                     ║\n");
+    terminal_writestring("║              OSComplex v0.1-alpha                        ║\n");
     terminal_writestring("║           An AI-Native Operating System                 ║\n");
     terminal_writestring("╚══════════════════════════════════════════════════════════╝\n\n");
     terminal_writestring("[KERNEL] Booting OSComplex...\n");
@@ -104,6 +106,7 @@ void kernel_main(void) {
      * ========================================================= */
     terminal_writestring("[DRIVERS] Initializing device drivers...\n");
     keyboard_init();
+    timer_init(); 
     terminal_writestring("[DRIVERS] All drivers initialized\n");
 
     /* =========================================================
@@ -114,14 +117,23 @@ void kernel_main(void) {
     terminal_writestring("[KERNEL] Interrupts enabled - system ready!\n\n");
 
     /* =========================================================
-     * Step 10: AI subsystem
+     * Step 10: Task Management & Scheduler
+     * MUST come after heap is initialized!
+     * ========================================================= */
+    terminal_writestring("[KERNEL] Initializing multitasking...\n");
+    task_init();
+    scheduler_init();
+    terminal_writestring("[KERNEL] Multitasking ready\n\n");
+
+    /* =========================================================
+     * Step 11: AI subsystem
      * ========================================================= */
     terminal_writestring("[AI] Initializing AI learning system...\n");
     ai_init();
     terminal_writestring("[AI] AI system ready\n\n");
 
     /* =========================================================
-     * Step 11: Shell
+     * Step 12: Shell
      * ========================================================= */
     terminal_writestring("[SHELL] Starting interactive shell...\n");
     shell_init();
@@ -135,7 +147,7 @@ void kernel_main(void) {
     terminal_setcolor(vga_entry_color(VGA_COLOR_WHITE, VGA_COLOR_BLACK));
 
     /* =========================================================
-     * Step 12: Run shell (never returns)
+     * Step 13: Run shell (never returns)
      * ========================================================= */
     shell_run();
 

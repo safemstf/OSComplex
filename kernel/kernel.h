@@ -12,6 +12,11 @@
 #include <stdbool.h>
 #include <stdarg.h>
 
+/* Timer */
+void timer_init(void);
+uint32_t timer_get_ticks(void);
+void timer_sleep(uint32_t ms);
+
 /* ================================================================== 
  * CORE CONSTANTS
  * ================================================================== */

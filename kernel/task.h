@@ -1,0 +1,131 @@
+/* kernel/task.h - Process/Task Management
+ * 
+ * Defines the fundamental structures for multitasking:
+ * - Task control block (TCB)
+ * - Task states and priorities
+ * - CPU register context
+ * 
+ * This is the foundation for running multiple programs!
+ */
+
+#ifndef TASK_H
+#define TASK_H
+
+#include <stdint.h>
+#include <stdbool.h>
+
+/* ================================================================
+ * TASK STATES
+ * ================================================================ */
+typedef enum {
+    TASK_READY,      /* Ready to run, waiting for CPU */
+    TASK_RUNNING,    /* Currently executing on CPU */
+    TASK_BLOCKED,    /* Waiting for I/O or event */
+    TASK_SLEEPING,   /* Sleeping for timer */
+    TASK_ZOMBIE      /* Finished, waiting to be cleaned up */
+} task_state_t;
+
+/* ================================================================
+ * CPU CONTEXT
+ * All CPU registers that need to be saved/restored on context switch
+ * ================================================================ */
+typedef struct {
+    /* General purpose registers (saved by pusha) */
+    uint32_t edi;
+    uint32_t esi;
+    uint32_t ebp;
+    uint32_t esp;    /* Stack pointer */
+    uint32_t ebx;
+    uint32_t edx;
+    uint32_t ecx;
+    uint32_t eax;
+    
+    /* Segment registers */
+    uint32_t ds;
+    uint32_t es;
+    uint32_t fs;
+    uint32_t gs;
+    
+    /* Instruction pointer and flags */
+    uint32_t eip;    /* Where to resume execution */
+    uint32_t cs;
+    uint32_t eflags;
+    
+    /* User stack (for returning from kernel mode) */
+    uint32_t user_esp;
+    uint32_t ss;
+} cpu_context_t;
+
+/* ================================================================
+ * TASK CONTROL BLOCK (TCB)
+ * Everything the OS needs to know about a process
+ * ================================================================ */
+typedef struct task {
+    /* Task identification */
+    uint32_t pid;                /* Process ID */
+    char name[32];               /* Task name (for debugging) */
+    
+    /* Task state */
+    task_state_t state;          /* Current state */
+    uint32_t priority;           /* Priority (0 = highest) */
+    
+    /* CPU context - saved/restored on context switch */
+    cpu_context_t context;
+    
+    /* Memory management */
+    uint32_t *page_directory;    /* Virtual address space */
+    uint32_t kernel_stack;       /* Kernel mode stack */
+    uint32_t user_stack;         /* User mode stack */
+    
+    /* Scheduling */
+    uint32_t time_slice;         /* Remaining time quantum */
+    uint32_t total_time;         /* Total CPU time used */
+    
+    /* Task tree */
+    struct task *parent;         /* Parent task */
+    struct task *next;           /* Next in scheduler queue */
+    
+    /* Exit status */
+    int exit_code;               /* Return value when task exits */
+} task_t;
+
+/* ================================================================
+ * TASK MANAGEMENT FUNCTIONS
+ * ================================================================ */
+
+/* Initialize task subsystem */
+void task_init(void);
+
+/* Create a new task */
+task_t* task_create(const char *name, void (*entry_point)(void), uint32_t priority);
+
+/* Destroy a task */
+void task_destroy(task_t *task);
+
+/* Get current running task */
+task_t* task_current(void);
+
+/* Switch to another task */
+void task_switch(task_t *new_task);
+
+/* Exit current task */
+void task_exit(int exit_code);
+
+/* Yield CPU to another task */
+void task_yield(void);
+
+/* Block current task (wait for event) */
+void task_block(void);
+
+/* Unblock a task (event occurred) */
+void task_unblock(task_t *task);
+
+/* Sleep for N milliseconds */
+void task_sleep(uint32_t ms);
+
+/* ================================================================
+ * KERNEL TASK
+ * ================================================================ */
+extern task_t *kernel_task;
+
+#endif /* TASK_H */

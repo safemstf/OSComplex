@@ -199,24 +199,6 @@ static void terminal_update_vga_row(size_t row_in_vga, size_t logical_row_idx)
  * high-level terminal operations (print, scrollback controls)
  * ===================================================================== */
 
-/* Scroll the terminal up by one line in the *visible VGA buffer* (keeps scrollback intact).
- * Also store the scrolled-off top line into scrollback (if not already stored). */
-static void terminal_scroll_once_visible(void)
-{
-    /* When using scrollback-backed model we don't need to move VGA memory manually here
-     * because terminal_render_viewport will handle the correct copy.
-     * However we provide this function for compatibility with legacy callers. */
-    if (!scroll_locked) {
-        /* if not locked, user is following; add a blank line and render */
-        scrollback_append_blank_line();
-        logical_row = scrollback_count - 1;
-        logical_col = 0;
-        terminal_resume_follow();
-    } else {
-        /* if locked, do nothing to visible buffer */
-    }
-}
-
 /* Public: page up (move viewport older) */
 void terminal_scrollback_page_up(void)
 {
