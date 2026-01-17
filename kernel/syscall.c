@@ -1,19 +1,28 @@
-/* kernel/syscall.c - System Call Implementation
- * 
- * Handles system calls from user programs via INT 0x80.
- */
+/* kernel/syscall.c - System Call Implementation */
 
 #include "syscall.h"
 #include "kernel.h"
 #include "task.h"
 #include "scheduler.h"
+#include "../drivers/terminal.h"
 
-/* Array of system call handlers */
-typedef int (*syscall_fn_t)(uint32_t, uint32_t, uint32_t, uint32_t, uint32_t);
+/* ================================================================
+ * SYSCALL DISPATCH TYPE
+ * ================================================================ */
+
+/* All syscall entry points MUST share this signature */
+typedef int (*syscall_fn_t)(
+    uint32_t,
+    uint32_t,
+    uint32_t,
+    uint32_t,
+    uint32_t
+);
+
 static syscall_fn_t syscall_table[SYSCALL_MAX];
 
 /* ================================================================
- * SYSTEM CALL IMPLEMENTATIONS
+ * REAL SYSCALL IMPLEMENTATIONS
  * ================================================================ */
 
 void sys_exit(int code)
@@ -23,16 +32,15 @@ void sys_exit(int code)
 
 int sys_write(const char *msg)
 {
-    /* Security: For now, trust the pointer (will validate later) */
-    if (!msg) return -1;
-    
+    if (!msg)
+        return -1;
+
     terminal_writestring(msg);
     return 0;
 }
 
 int sys_read(char *buf, size_t len)
 {
-    /* TODO: Implement keyboard input */
     (void)buf;
     (void)len;
     return -1;
@@ -56,17 +64,78 @@ void sys_sleep(uint32_t ms)
 
 int sys_fork(void)
 {
-    /* TODO: Implement fork */
-    terminal_writestring("[SYSCALL] fork() not implemented yet\n");
+    terminal_writestring("[SYSCALL] fork() not implemented\n");
     return -1;
 }
 
 int sys_exec(void *entry)
 {
-    /* TODO: Implement exec */
     (void)entry;
-    terminal_writestring("[SYSCALL] exec() not implemented yet\n");
+    terminal_writestring("[SYSCALL] exec() not implemented\n");
     return -1;
+}
+
+/* ================================================================
+ * SYSCALL ENTRY WRAPPERS (ABI SAFE)
+ * ================================================================ */
+
+static int sys_exit_entry(uint32_t code, uint32_t a2, uint32_t a3,
+                          uint32_t a4, uint32_t a5)
+{
+    (void)a2; (void)a3; (void)a4; (void)a5;
+    sys_exit((int)code);
+    return 0;
+}
+
+static int sys_write_entry(uint32_t msg, uint32_t a2, uint32_t a3,
+                           uint32_t a4, uint32_t a5)
+{
+    (void)a2; (void)a3; (void)a4; (void)a5;
+    return sys_write((const char *)msg);
+}
+
+static int sys_read_entry(uint32_t buf, uint32_t len, uint32_t a3,
+                          uint32_t a4, uint32_t a5)
+{
+    (void)a3; (void)a4; (void)a5;
+    return sys_read((char *)buf, (size_t)len);
+}
+
+static int sys_yield_entry(uint32_t a1, uint32_t a2, uint32_t a3,
+                           uint32_t a4, uint32_t a5)
+{
+    (void)a1; (void)a2; (void)a3; (void)a4; (void)a5;
+    sys_yield();
+    return 0;
+}
+
+static int sys_getpid_entry(uint32_t a1, uint32_t a2, uint32_t a3,
+                            uint32_t a4, uint32_t a5)
+{
+    (void)a1; (void)a2; (void)a3; (void)a4; (void)a5;
+    return (int)sys_getpid();
+}
+
+static int sys_sleep_entry(uint32_t ms, uint32_t a2, uint32_t a3,
+                           uint32_t a4, uint32_t a5)
+{
+    (void)a2; (void)a3; (void)a4; (void)a5;
+    sys_sleep(ms);
+    return 0;
+}
+
+static int sys_fork_entry(uint32_t a1, uint32_t a2, uint32_t a3,
+                          uint32_t a4, uint32_t a5)
+{
+    (void)a1; (void)a2; (void)a3; (void)a4; (void)a5;
+    return sys_fork();
+}
+
+static int sys_exec_entry(uint32_t entry, uint32_t a2, uint32_t a3,
+                          uint32_t a4, uint32_t a5)
+{
+    (void)a2; (void)a3; (void)a4; (void)a5;
+    return sys_exec((void *)entry);
 }
 
 /* ================================================================
@@ -75,35 +144,20 @@ int sys_exec(void *entry)
 
 void syscall_handler(struct registers *regs)
 {
-    /* System call number is in EAX */
-    uint32_t syscall_num = regs->eax;
-    
-    /* Arguments in EBX, ECX, EDX, ESI, EDI */
-    uint32_t arg1 = regs->ebx;
-    uint32_t arg2 = regs->ecx;
-    uint32_t arg3 = regs->edx;
-    uint32_t arg4 = regs->esi;
-    uint32_t arg5 = regs->edi;
-    
-    /* Validate syscall number */
-    if (syscall_num >= SYSCALL_MAX) {
-        terminal_writestring("[SYSCALL] Invalid syscall number: ");
-        char buf[16];
-        itoa(syscall_num, buf);
-        terminal_writestring(buf);
-        terminal_writestring("\n");
-        regs->eax = -1;
+    uint32_t num = regs->eax;
+
+    if (num >= SYSCALL_MAX || !syscall_table[num]) {
+        regs->eax = (uint32_t)-1;
         return;
     }
-    
-    /* Call the appropriate handler */
-    syscall_fn_t handler = syscall_table[syscall_num];
-    if (handler) {
-        int result = handler(arg1, arg2, arg3, arg4, arg5);
-        regs->eax = result;  /* Return value in EAX */
-    } else {
-        regs->eax = -1;
-    }
+
+    regs->eax = syscall_table[num](
+        regs->ebx,
+        regs->ecx,
+        regs->edx,
+        regs->esi,
+        regs->edi
+    );
 }
 
 /* ================================================================
@@ -112,25 +166,19 @@ void syscall_handler(struct registers *regs)
 
 void syscall_init(void)
 {
-    /* Clear syscall table */
-    for (int i = 0; i < SYSCALL_MAX; i++) {
+    for (int i = 0; i < SYSCALL_MAX; i++)
         syscall_table[i] = NULL;
-    }
-    
-    /* Register system calls */
-    syscall_table[SYS_EXIT]   = (syscall_fn_t)sys_exit;
-    syscall_table[SYS_WRITE]  = (syscall_fn_t)sys_write;
-    syscall_table[SYS_READ]   = (syscall_fn_t)sys_read;
-    syscall_table[SYS_YIELD]  = (syscall_fn_t)sys_yield;
-    syscall_table[SYS_GETPID] = (syscall_fn_t)sys_getpid;
-    syscall_table[SYS_SLEEP]  = (syscall_fn_t)sys_sleep;
-    syscall_table[SYS_FORK]   = (syscall_fn_t)sys_fork;
-    syscall_table[SYS_EXEC]   = (syscall_fn_t)sys_exec;
-    
-    /* Install INT 0x80 handler */
-    idt_set_gate(0x80, (uint32_t)syscall_stub, 0x08, 0xEE);  /* DPL=3 for user mode */
-    
-    terminal_setcolor(vga_entry_color(VGA_COLOR_LIGHT_GREEN, VGA_COLOR_BLACK));
-    terminal_writestring("[SYSCALL] System call interface initialized (INT 0x80)\n");
-    terminal_setcolor(vga_entry_color(VGA_COLOR_WHITE, VGA_COLOR_BLACK));
+
+    syscall_table[SYS_EXIT]   = sys_exit_entry;
+    syscall_table[SYS_WRITE]  = sys_write_entry;
+    syscall_table[SYS_READ]   = sys_read_entry;
+    syscall_table[SYS_YIELD]  = sys_yield_entry;
+    syscall_table[SYS_GETPID] = sys_getpid_entry;
+    syscall_table[SYS_SLEEP]  = sys_sleep_entry;
+    syscall_table[SYS_FORK]   = sys_fork_entry;
+    syscall_table[SYS_EXEC]   = sys_exec_entry;
+
+    idt_set_gate(0x80, (uint32_t)syscall_stub, 0x08, 0xEE);
+
+    terminal_writestring("[SYSCALL] INT 0x80 initialized\n");
 }

@@ -1,28 +1,35 @@
 /* kernel/kernel.c - Main kernel initialization
- * 
+ *
  * UPDATED: Added task management and scheduler initialization
  */
 
 #include "kernel.h"
+
 #include "fpu.h"
+
 #include "task.h"
 #include "scheduler.h"
+
+#include "../fs/vfs.h"
 
 /* Linker symbols */
 extern uint8_t kernel_start;
 extern uint8_t kernel_end;
 
 /* Helper functions */
-static inline uint32_t align_down(uint32_t addr) {
+static inline uint32_t align_down(uint32_t addr)
+{
     return addr & ~(PAGE_SIZE - 1);
 }
 
-static inline uint32_t align_up(uint32_t addr) {
+static inline uint32_t align_up(uint32_t addr)
+{
     return (addr + PAGE_SIZE - 1) & ~(PAGE_SIZE - 1);
 }
 
 /* Kernel entry point */
-void kernel_main(void) {
+void kernel_main(void)
+{
     /* =========================================================
      * Step 1: Terminal (needed for debug output)
      * ========================================================= */
@@ -40,20 +47,20 @@ void kernel_main(void) {
      * Step 2: Physical Memory Manager
      * ========================================================= */
     terminal_writestring("[PMM] Initializing physical memory manager...\n");
-    
+
     /* Initialize PMM with conservative memory limit */
     pmm_init(MEMORY_LIMIT);
-    
+
     /* Free usable memory above 1MB */
-    pmm_init_region((void*)0x100000, MEMORY_LIMIT - 0x100000);
-    
+    pmm_init_region((void *)0x100000, MEMORY_LIMIT - 0x100000);
+
     /* Reserve kernel image */
     uint32_t kstart = align_down((uint32_t)&kernel_start);
     uint32_t kend = align_up((uint32_t)&kernel_end);
     uint32_t ksize = kend - kstart;
-    
-    pmm_deinit_region((void*)kstart, ksize);
-    
+
+    pmm_deinit_region((void *)kstart, ksize);
+
     terminal_writestring("[PMM] Kernel memory reserved: 0x");
     char buf[16];
     utoa(kstart, buf, 16);
@@ -106,7 +113,7 @@ void kernel_main(void) {
      * ========================================================= */
     terminal_writestring("[DRIVERS] Initializing device drivers...\n");
     keyboard_init();
-    timer_init(); 
+    timer_init();
     terminal_writestring("[DRIVERS] All drivers initialized\n");
 
     /* =========================================================
@@ -123,18 +130,25 @@ void kernel_main(void) {
     terminal_writestring("[KERNEL] Initializing multitasking...\n");
     task_init();
     scheduler_init();
-    syscall_init(); 
+    syscall_init();
     terminal_writestring("[KERNEL] Multitasking ready\n\n");
 
     /* =========================================================
-     * Step 11: AI subsystem
+     * Step 11: Virtual File System
+     * ========================================================= */
+    terminal_writestring("[VFS] Initializing virtual file system...\n");
+    vfs_init();
+    terminal_writestring("[VFS] Virtual file system ready\n\n");
+
+    /* =========================================================
+     * Step 12: AI subsystem
      * ========================================================= */
     terminal_writestring("[AI] Initializing AI learning system...\n");
     ai_init();
     terminal_writestring("[AI] AI system ready\n\n");
 
     /* =========================================================
-     * Step 12: Shell
+     * Step 13: Shell
      * ========================================================= */
     terminal_writestring("[SHELL] Starting interactive shell...\n");
     shell_init();
@@ -148,7 +162,7 @@ void kernel_main(void) {
     terminal_setcolor(vga_entry_color(VGA_COLOR_WHITE, VGA_COLOR_BLACK));
 
     /* =========================================================
-     * Step 13: Run shell (never returns)
+     * Step 14: Run shell (never returns)
      * ========================================================= */
     shell_run();
 
@@ -156,7 +170,8 @@ void kernel_main(void) {
     terminal_setcolor(vga_entry_color(VGA_COLOR_LIGHT_RED, VGA_COLOR_BLACK));
     terminal_writestring("\n\n[KERNEL] FATAL: Shell returned unexpectedly!\n");
 
-    while (1) {
+    while (1)
+    {
         __asm__ volatile("cli; hlt");
     }
 }

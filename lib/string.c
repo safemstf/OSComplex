@@ -113,6 +113,31 @@ char *strchr(const char *s, int c)
     return (char *)s;
 }
 
+/* Find LAST occurrence of character in string
+ * 
+ * This is needed by VFS for finding the last '/' in paths
+ * Example: "/path/to/file.txt" -> returns pointer to last '/'
+ */
+char *strrchr(const char *s, int c)
+{
+    const char *last = NULL;
+    
+    /* Scan entire string, remember last occurrence */
+    while (*s) {
+        if (*s == (char)c) {
+            last = s;
+        }
+        s++;
+    }
+    
+    /* Check if we're looking for null terminator */
+    if ((char)c == '\0') {
+        return (char *)s;
+    }
+    
+    return (char *)last;
+}
+
 /* Find character in memory */
 void *memchr(const void *s, int c, size_t n)
 {

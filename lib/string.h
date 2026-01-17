@@ -23,6 +23,7 @@ char* strncpy(char* dest, const char* src, size_t n);
 char* strcat(char* dest, const char* src);
 char* strncat(char* dest, const char* src, size_t n);
 char* strchr(const char* s, int c);
+char* strrchr(const char* s, int c);  /* Find LAST occurrence */
 char* strstr(const char* haystack, const char* needle);
 char* strtok_r(char* str, const char* delim, char** saveptr);
 char* strtrim(char* str);

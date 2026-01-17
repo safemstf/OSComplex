@@ -1,8 +1,4 @@
-/* kernel/syscall.h - System Call Interface
- * 
- * Provides the interface between user programs and kernel.
- * User programs trigger INT 0x80 with syscall number in EAX.
- */
+/* kernel/syscall.h - System Call Interface */
 
 #ifndef SYSCALL_H
 #define SYSCALL_H
@@ -10,63 +6,48 @@
 #include <stdint.h>
 #include <stddef.h>
 
-/* Forward declaration - struct registers defined in kernel.h */
+/* Forward declaration */
 struct registers;
 
 /* ================================================================
  * SYSTEM CALL NUMBERS
  * ================================================================ */
 
-#define SYS_EXIT    0   /* exit(int code) */
-#define SYS_WRITE   1   /* write(const char* msg) */
-#define SYS_READ    2   /* read(char* buf, size_t len) */
-#define SYS_YIELD   3   /* yield() - give up CPU */
-#define SYS_GETPID  4   /* getpid() - get process ID */
-#define SYS_SLEEP   5   /* sleep(uint32_t ms) */
-#define SYS_FORK    6   /* fork() - create child process */
-#define SYS_EXEC    7   /* exec(void* entry) - replace current process */
+#define SYS_EXIT    0
+#define SYS_WRITE   1
+#define SYS_READ    2
+#define SYS_YIELD   3
+#define SYS_GETPID  4
+#define SYS_SLEEP   5
+#define SYS_FORK    6
+#define SYS_EXEC    7
 
 #define SYSCALL_MAX 8
 
 /* ================================================================
- * SYSTEM CALL INTERFACE
+ * INITIALIZATION
  * ================================================================ */
 
-/* Initialize system call handler */
 void syscall_init(void);
 
-/* Defined in syscall.s */
+/* Assembly entry point */
 extern void syscall_stub(void);
 
-/* System call handler (called from assembly) */
+/* C-level handler */
 void syscall_handler(struct registers *regs);
 
 /* ================================================================
- * SYSTEM CALL IMPLEMENTATIONS
+ * INTERNAL SYSCALL IMPLEMENTATIONS
+ * (real logic, NOT directly dispatched)
  * ================================================================ */
 
-/* Exit current process */
-void sys_exit(int code);
-
-/* Write string to terminal */
-int sys_write(const char *msg);
-
-/* Read input (placeholder) */
-int sys_read(char *buf, size_t len);
-
-/* Yield CPU to another task */
-void sys_yield(void);
-
-/* Get current process ID */
+void     sys_exit(int code);
+int      sys_write(const char *msg);
+int      sys_read(char *buf, size_t len);
+void     sys_yield(void);
 uint32_t sys_getpid(void);
-
-/* Sleep for milliseconds */
-void sys_sleep(uint32_t ms);
-
-/* Fork - create child process (placeholder) */
-int sys_fork(void);
-
-/* Execute - replace current process (placeholder) */
-int sys_exec(void *entry);
+void     sys_sleep(uint32_t ms);
+int      sys_fork(void);
+int      sys_exec(void *entry);
 
 #endif /* SYSCALL_H */

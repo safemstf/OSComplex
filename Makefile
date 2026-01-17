@@ -37,6 +37,8 @@ LIB_C = lib/string.c
 AI_C = ai/ai.c
 SHELL_C = shell/shell.c shell/test_tasks.c
 MM_C = mm/pmm.c mm/paging.c mm/heap.c mm/vmm.c
+FS_C = fs/vfs.c
+
 
 # ============================================================
 # OBJECT FILES
@@ -49,9 +51,9 @@ LIB_OBJ = $(LIB_C:.c=.o)
 AI_OBJ = $(AI_C:.c=.o)
 SHELL_OBJ = $(SHELL_C:.c=.o)
 MM_OBJ = $(MM_C:.c=.o)
+FS_OBJ = $(FS_C:.c=.o)
 
-OBJS = $(BOOT_OBJ) $(INT_OBJ) $(DRIVER_OBJ) $(KERNEL_OBJ) $(LIB_OBJ) $(AI_OBJ) $(SHELL_OBJ) $(MM_OBJ)
-
+OBJS = $(BOOT_OBJ) $(INT_OBJ) $(DRIVER_OBJ) $(KERNEL_OBJ) $(LIB_OBJ) $(AI_OBJ) $(SHELL_OBJ) $(MM_OBJ) $(FS_OBJ)
 # ============================================================
 # BUILD TARGETS
 # ============================================================
