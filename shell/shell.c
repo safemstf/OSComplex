@@ -23,6 +23,7 @@
 #include "../drivers/terminal.h"
 #include "../kernel/kernel.h"
 #include "../mm/pmm.h"
+#include "../interrupts/pagefault.h"
 
 #define SHELL_BUFFER_SIZE 256
 #define SHELL_PROMPT "complex> "
@@ -149,37 +150,37 @@ static void cmd_sysinfo(void)
     uint32_t total = pmm_get_total_blocks();
     uint32_t used = pmm_get_used_blocks();
     uint32_t free = pmm_get_free_blocks();
-    
+
     terminal_setcolor(vga_entry_color(VGA_COLOR_LIGHT_CYAN, VGA_COLOR_BLACK));
     terminal_writestring("\n╔══════════════════════════════════════════════════════════╗\n");
     terminal_writestring("║              System Information                         ║\n");
     terminal_writestring("╚══════════════════════════════════════════════════════════╝\n\n");
-    
+
     terminal_setcolor(vga_entry_color(VGA_COLOR_WHITE, VGA_COLOR_BLACK));
-    
+
     terminal_writestring("Physical Memory:\n");
     terminal_writestring("  Total    : ");
     terminal_write_dec(total * 4);
     terminal_writestring(" KB (");
     terminal_write_dec(total);
     terminal_writestring(" blocks)\n");
-    
+
     terminal_writestring("  Used     : ");
     terminal_write_dec(used * 4);
     terminal_writestring(" KB (");
     terminal_write_dec(used);
     terminal_writestring(" blocks)\n");
-    
+
     terminal_writestring("  Free     : ");
     terminal_write_dec(free * 4);
     terminal_writestring(" KB (");
     terminal_write_dec(free);
     terminal_writestring(" blocks)\n");
-    
+
     terminal_writestring("\nMemory Layout:\n");
     terminal_writestring("  Kernel   : 0x00100000 - 0x08000000 (127 MB)\n");
     terminal_writestring("  Heap     : 0xC0400000 - 0xC0800000 (4 MB)\n");
-    
+
     terminal_writestring("\nSubsystems Status:\n");
     terminal_setcolor(vga_entry_color(VGA_COLOR_LIGHT_GREEN, VGA_COLOR_BLACK));
     terminal_writestring("  [✓] PMM   - Physical Memory Manager\n");
@@ -188,7 +189,7 @@ static void cmd_sysinfo(void)
     terminal_writestring("  [✓] IDT   - Interrupt Descriptor Table\n");
     terminal_writestring("  [✓] PIC   - Programmable Interrupt Controller\n");
     terminal_writestring("  [✓] AI    - Learning System\n");
-    
+
     terminal_setcolor(vga_entry_color(VGA_COLOR_WHITE, VGA_COLOR_BLACK));
     terminal_writestring("\n");
 }
@@ -196,57 +197,8 @@ static void cmd_sysinfo(void)
 /* Built-in command: testpf - Test page fault recovery */
 static void cmd_testpf(void)
 {
-    terminal_setcolor(vga_entry_color(VGA_COLOR_LIGHT_CYAN, VGA_COLOR_BLACK));
-    terminal_writestring("\n╔══════════════════════════════════════════════════════════╗\n");
-    terminal_writestring("║            Page Fault Recovery Test                     ║\n");
-    terminal_writestring("╚══════════════════════════════════════════════════════════╝\n\n");
-    
-    terminal_setcolor(vga_entry_color(VGA_COLOR_WHITE, VGA_COLOR_BLACK));
-    
-    /* Test 1: Access unmapped memory in heap range */
-    terminal_writestring("[TEST 1] Accessing unmapped page at 0xC0500000...\n");
-    volatile uint32_t* test_ptr = (volatile uint32_t*)0xC0500000;
-    
-    terminal_writestring("         Writing 0xDEADBEEF...\n");
-    *test_ptr = 0xDEADBEEF;
-    
-    terminal_writestring("         Reading back value...\n");
-    uint32_t value = *test_ptr;
-    
-    terminal_writestring("         Value = 0x");
-    terminal_write_hex(value);
-    terminal_writestring("\n");
-    
-    if (value == 0xDEADBEEF) {
-        terminal_setcolor(vga_entry_color(VGA_COLOR_LIGHT_GREEN, VGA_COLOR_BLACK));
-        terminal_writestring("         ✓ SUCCESS - Page fault recovery works!\n");
-    } else {
-        terminal_setcolor(vga_entry_color(VGA_COLOR_LIGHT_RED, VGA_COLOR_BLACK));
-        terminal_writestring("         ✗ FAILED - Wrong value\n");
-    }
-    
-    /* Test 2: Access another unmapped page */
-    terminal_setcolor(vga_entry_color(VGA_COLOR_WHITE, VGA_COLOR_BLACK));
-    terminal_writestring("\n[TEST 2] Accessing unmapped page at 0xC0600000...\n");
-    volatile uint32_t* test_ptr2 = (volatile uint32_t*)0xC0600000;
-    
-    terminal_writestring("         Writing 0xCAFEBABE...\n");
-    *test_ptr2 = 0xCAFEBABE;
-    
-    terminal_writestring("         Reading back value...\n");
-    value = *test_ptr2;
-    
-    terminal_writestring("         Value = 0x");
-    terminal_write_hex(value);
-    terminal_writestring("\n");
-    
-    if (value == 0xCAFEBABE) {
-        terminal_setcolor(vga_entry_color(VGA_COLOR_LIGHT_GREEN, VGA_COLOR_BLACK));
-        terminal_writestring("         ✓ SUCCESS - Multiple page faults work!\n");
-    }
-    
-    terminal_setcolor(vga_entry_color(VGA_COLOR_WHITE, VGA_COLOR_BLACK));
-    terminal_writestring("\n");
+    /* Just call the test function from pagefault.c */
+    test_page_fault_recovery();
 }
 
 /* Built-in command: heaptest - Test heap allocator */
@@ -256,16 +208,17 @@ static void cmd_heaptest(void)
     terminal_writestring("\n╔══════════════════════════════════════════════════════════╗\n");
     terminal_writestring("║              Heap Allocator Test                        ║\n");
     terminal_writestring("╚══════════════════════════════════════════════════════════╝\n\n");
-    
+
     terminal_setcolor(vga_entry_color(VGA_COLOR_WHITE, VGA_COLOR_BLACK));
-    
+
     /* Test 1: Small allocations */
     terminal_writestring("[TEST 1] Small allocations (64 bytes each)...\n");
-    void* ptr1 = kmalloc(64);
-    void* ptr2 = kmalloc(64);
-    void* ptr3 = kmalloc(64);
-    
-    if (ptr1 && ptr2 && ptr3) {
+    void *ptr1 = kmalloc(64);
+    void *ptr2 = kmalloc(64);
+    void *ptr3 = kmalloc(64);
+
+    if (ptr1 && ptr2 && ptr3)
+    {
         terminal_setcolor(vga_entry_color(VGA_COLOR_LIGHT_GREEN, VGA_COLOR_BLACK));
         terminal_writestring("         ✓ All allocations successful\n");
         terminal_setcolor(vga_entry_color(VGA_COLOR_WHITE, VGA_COLOR_BLACK));
@@ -276,19 +229,22 @@ static void cmd_heaptest(void)
         terminal_writestring("\n         ptr3 = 0x");
         terminal_write_hex((uint32_t)ptr3);
         terminal_writestring("\n");
-    } else {
+    }
+    else
+    {
         terminal_setcolor(vga_entry_color(VGA_COLOR_LIGHT_RED, VGA_COLOR_BLACK));
         terminal_writestring("         ✗ Allocation failed\n");
         terminal_setcolor(vga_entry_color(VGA_COLOR_WHITE, VGA_COLOR_BLACK));
         return;
     }
-    
+
     /* Test 2: Write to allocated memory */
     terminal_writestring("\n[TEST 2] Writing to allocated memory...\n");
-    uint32_t* test = (uint32_t*)ptr1;
+    uint32_t *test = (uint32_t *)ptr1;
     *test = 0x12345678;
-    
-    if (*test == 0x12345678) {
+
+    if (*test == 0x12345678)
+    {
         terminal_setcolor(vga_entry_color(VGA_COLOR_LIGHT_GREEN, VGA_COLOR_BLACK));
         terminal_writestring("         ✓ Memory write/read successful\n");
         terminal_setcolor(vga_entry_color(VGA_COLOR_WHITE, VGA_COLOR_BLACK));
@@ -296,7 +252,7 @@ static void cmd_heaptest(void)
         terminal_write_hex(*test);
         terminal_writestring("\n");
     }
-    
+
     /* Test 3: Free memory */
     terminal_writestring("\n[TEST 3] Freeing memory...\n");
     kfree(ptr1);
@@ -304,13 +260,14 @@ static void cmd_heaptest(void)
     kfree(ptr3);
     terminal_setcolor(vga_entry_color(VGA_COLOR_LIGHT_GREEN, VGA_COLOR_BLACK));
     terminal_writestring("         ✓ Memory freed successfully\n");
-    
+
     /* Test 4: Large allocation */
     terminal_setcolor(vga_entry_color(VGA_COLOR_WHITE, VGA_COLOR_BLACK));
     terminal_writestring("\n[TEST 4] Large allocation (8KB)...\n");
-    void* large = kmalloc(8192);
-    
-    if (large) {
+    void *large = kmalloc(8192);
+
+    if (large)
+    {
         terminal_setcolor(vga_entry_color(VGA_COLOR_LIGHT_GREEN, VGA_COLOR_BLACK));
         terminal_writestring("         ✓ Large allocation successful\n");
         terminal_setcolor(vga_entry_color(VGA_COLOR_WHITE, VGA_COLOR_BLACK));
@@ -321,7 +278,7 @@ static void cmd_heaptest(void)
         terminal_setcolor(vga_entry_color(VGA_COLOR_LIGHT_GREEN, VGA_COLOR_BLACK));
         terminal_writestring("         ✓ Large memory freed\n");
     }
-    
+
     terminal_setcolor(vga_entry_color(VGA_COLOR_WHITE, VGA_COLOR_BLACK));
     terminal_writestring("\n");
 }

@@ -1,6 +1,6 @@
 /* mm/vmm.c - Virtual Memory Manager
  *
- * FIXED: No kmalloc during init, proper bootstrap sequence
+ * FIXED: Proper physical/virtual address handling for page tables
  */
 
 #include "vmm.h"
@@ -36,7 +36,10 @@ static inline uint32_t align_page(uint32_t addr)
 static void vmm_map_page_internal(uint32_t *page_dir, uint32_t virt_addr,
                                   uint32_t phys_addr, uint32_t flags);
 
-/* Get or create page table */
+/* Get or create page table
+ * CRITICAL FIX: Page tables are in the identity-mapped region (< 128MB)
+ * so we can access them directly using their physical address as virtual.
+ */
 static uint32_t *get_page_table(uint32_t *pd, uint32_t pd_idx, uint32_t flags)
 {
     if (!pd)
@@ -44,10 +47,12 @@ static uint32_t *get_page_table(uint32_t *pd, uint32_t pd_idx, uint32_t flags)
 
     uint32_t pde = pd[pd_idx];
 
-    /* If exists, return it */
+    /* If exists, return it (physical addr = virtual addr in identity map) */
     if (pde & VMM_PRESENT)
     {
-        return (uint32_t *)(pde & ~0xFFF);
+        uint32_t pt_phys = pde & ~0xFFF;
+        /* Since we're identity-mapped, phys == virt for page tables */
+        return (uint32_t *)pt_phys;
     }
 
     /* Allocate new page table */
@@ -55,6 +60,8 @@ static uint32_t *get_page_table(uint32_t *pd, uint32_t pd_idx, uint32_t flags)
     if (!pt)
         return NULL;
 
+    /* CRITICAL: pt is a physical address, but since we're identity-mapped,
+     * we can use it as a virtual address directly */
     memset(pt, 0, PAGE_SIZE);
 
     /* Set directory entry */

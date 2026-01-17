@@ -1,16 +1,14 @@
-/* interrupts/interrupts.s - Low-level interrupt handler stubs (FULLY FIXED)
+/* interrupts/interrupts.s - Low-level interrupt handler stubs
  * 
- * FIX: ALL stubs manually written to avoid ANY macro expansion issues.
- * The bug was likely ISR stubs jumping to irq_common_stub instead of isr_common_stub.
+ * FIXED: isr_common_stub now passes stack pointer as argument,
+ * matching irq_common_stub behavior.
  */
 
 .section .text
 
 /* ================================================================
- * CPU EXCEPTION HANDLERS (0-31) - MANUALLY WRITTEN
- * ================================================================
- * NO MACROS - explicit code for each handler to ensure correctness
- */
+ * CPU EXCEPTION HANDLERS (0-31)
+ * ================================================================ */
 
 /* ISR 0: Divide by zero - NO error code */
 .global isr0
@@ -80,7 +78,6 @@ isr7:
 .global isr8
 isr8:
     cli
-    /* CPU already pushed error code */
     push $8
     jmp isr_common_stub
 
@@ -120,13 +117,21 @@ isr13:
     push $13
     jmp isr_common_stub
 
-/* ISR 14: Page fault - HAS error code */
 .global isr14
 isr14:
     cli
-    push $14
+    /* CPU pushed: [esp+0] = error_code */
+    /* We need: [esp+0] = int_no, [esp+4] = error_code */
+    
+    /* Save error code in a register */
+    mov (%esp), %eax
+    /* Overwrite it with int_no */
+    movl $14, (%esp)
+    /* Push the saved error code */
+    push %eax
     jmp isr_common_stub
 
+    
 /* ISR 15: Reserved - NO error code */
 .global isr15
 isr15:
@@ -141,7 +146,7 @@ isr16:
     cli
     push $0
     push $16
-    jmp isr_common_stub     /* CRITICAL: Must be isr_common_stub, NOT irq_common_stub! */
+    jmp isr_common_stub
 
 /* ISR 17: Alignment check - HAS error code */
 .global isr17
@@ -274,49 +279,49 @@ irq1:
 irq2:
     cli
     push $0
-    push $34        /* Cascade */
+    push $34
     jmp irq_common_stub
 
 .global irq3
 irq3:
     cli
     push $0
-    push $35        /* COM2 */
+    push $35
     jmp irq_common_stub
 
 .global irq4
 irq4:
     cli
     push $0
-    push $36        /* COM1 */
+    push $36
     jmp irq_common_stub
 
 .global irq5
 irq5:
     cli
     push $0
-    push $37        /* LPT2 */
+    push $37
     jmp irq_common_stub
 
 .global irq6
 irq6:
     cli
     push $0
-    push $38        /* Floppy */
+    push $38
     jmp irq_common_stub
 
 .global irq7
 irq7:
     cli
     push $0
-    push $39        /* LPT1 / Spurious */
+    push $39
     jmp irq_common_stub
 
 .global irq8
 irq8:
     cli
     push $0
-    push $40        /* RTC */
+    push $40
     jmp irq_common_stub
 
 .global irq9
@@ -344,32 +349,33 @@ irq11:
 irq12:
     cli
     push $0
-    push $44        /* PS/2 Mouse */
+    push $44
     jmp irq_common_stub
 
 .global irq13
 irq13:
     cli
     push $0
-    push $45        /* FPU */
+    push $45
     jmp irq_common_stub
 
 .global irq14
 irq14:
     cli
     push $0
-    push $46        /* Primary ATA */
+    push $46
     jmp irq_common_stub
 
 .global irq15
 irq15:
     cli
     push $0
-    push $47        /* Secondary ATA */
+    push $47
     jmp irq_common_stub
 
 /* ================================================================
  * ISR COMMON STUB - For CPU Exceptions (int 0-31)
+ * FIXED: Now passes stack pointer as argument like irq_common_stub
  * ================================================================ */
 isr_common_stub:
     pusha
@@ -385,7 +391,10 @@ isr_common_stub:
     mov %ax, %fs
     mov %ax, %gs
     
+    mov %esp, %eax      /* Save stack pointer */
+    push %eax           /* Pass as argument to isr_handler */
     call isr_handler
+    add $4, %esp        /* Clean up argument */
     
     pop %gs
     pop %fs

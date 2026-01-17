@@ -46,6 +46,7 @@ static bool shift_pressed = false;
 static bool ctrl_pressed = false;
 static bool alt_pressed = false;
 static bool caps_lock = false;
+static bool extended_scancode = false;
 
 /* US QWERTY keyboard layout - scancode to ASCII mapping
  *
@@ -224,6 +225,37 @@ void keyboard_handler(void)
         caps_lock = !caps_lock;
         /* TODO: Update keyboard LEDs to show Caps Lock state */
         return;
+    }
+
+    /* Handle extended scancode prefix */
+    if (scancode == 0xE0)
+    {
+        extended_scancode = true;
+        return;
+    }
+
+    /* Process extended scancode */
+    if (extended_scancode)
+    {
+        extended_scancode = false;
+
+        /* Ignore key releases */
+        if (scancode & 0x80)
+            return;
+
+        switch (scancode)
+        {
+        case 0x49: /* Page Up */
+            terminal_scrollback_page_up();
+            return;
+
+        case 0x51: /* Page Down */
+            terminal_scrollback_page_down();
+            return;
+
+        default:
+            return;
+        }
     }
 
     /* Convert scancode to ASCII character */

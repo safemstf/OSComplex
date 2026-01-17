@@ -1,14 +1,16 @@
-/* interrupts/isr.c - ISR handlers (safe drop-in)
- * Minimal improvements only: macros, prototypes, no ABI changes.
+/* interrupts/isr.c - ISR handlers
+ * FIXED: Use STACK_* macros (direct access) not ISR_STACK_* (dereferenced)
  */
 
 #include "../kernel/kernel.h"
 #include "../kernel/fpu.h"
-/* Forward declarations (from other C files) to avoid implicit declarations */
-extern void page_fault_handler(uint32_t *stack_ptr); /* keeps your existing PF handler signature */
-extern void pic_send_eoi(uint8_t irq);               /* from drivers/pic.c */
+#include "isr_stack.h"
 
-/* Keep your exception messages exactly as before */
+/* Forward declarations */
+extern void page_fault_handler(uint32_t *stack_ptr);
+extern void pic_send_eoi(uint8_t irq);
+
+/* Exception messages */
 static const char *exception_messages[] = {
     "Division By Zero",
     "Debug",
@@ -34,9 +36,10 @@ static const char *exception_messages[] = {
     "Control Protection Exception",
     "Reserved", "Reserved", "Reserved", "Reserved",
     "Reserved", "Reserved", "Reserved", "Reserved",
-    "Reserved", "Reserved"};
+    "Reserved", "Reserved"
+};
 
-/* --- small helpers for hex/decimal printing (unchanged semantics) --- */
+/* Hex/decimal printing helpers */
 static void print_hex_digit(uint8_t val)
 {
     if (val < 10)
@@ -63,48 +66,40 @@ static void print_dec(uint32_t val)
     terminal_putchar('0' + val % 10);
 }
 
-/* --- Accessor macros that encapsulate the magic indices.
-   Keep these so you can switch to a struct later by editing just these
-   macros (no assembly changes needed). --- */
-#define STACK_INTNO(sp) ((sp)[13])
-#define STACK_ERRCODE(sp) ((sp)[14])
-#define STACK_EIP(sp) ((sp)[15])
-#define STACK_CS(sp) ((sp)[16])
-/* CPU Exception Handler (updated: proper FPU/SSE dispatch) */
-void isr_handler(void)
+/* CPU Exception Handler - FIXED to use STACK_* macros (direct access) */
+void isr_handler(uint32_t *stack_ptr)
 {
-    uint32_t *stack_ptr;
-    __asm__ volatile("mov %%esp, %0" : "=r"(stack_ptr));
-
+    /* Use direct STACK_* macros - assembly passes ESP value, not pointer to ESP */
     uint32_t int_no = STACK_INTNO(stack_ptr);
     uint32_t err_code = STACK_ERRCODE(stack_ptr);
 
     /* === FPU / SSE EXCEPTIONS === */
 
-    /* #7: Device Not Available (lazy FPU enable) */
+    /* #7: Device Not Available */
     if (int_no == 7)
     {
-        isr_device_not_available(stack_ptr);
-        return; /* MUST return so the faulting instruction retries */
+        isr_device_not_available(stack_ptr);  /* Pass stack_ptr directly */
+        return;
     }
 
     /* #16: x87 FPU Floating-Point Exception */
     if (int_no == 16)
     {
-        isr_x87_fpu_fault(stack_ptr);
+        isr_x87_fpu_fault(stack_ptr);  /* Pass stack_ptr directly */
         return;
     }
 
     /* #19: SIMD Floating-Point Exception */
     if (int_no == 19)
     {
-        isr_simd_fp_exception(stack_ptr);
+        isr_simd_fp_exception(stack_ptr);  /* Pass stack_ptr directly */
         return;
     }
 
     /* SPECIAL CASE: Page fault (#14) */
     if (int_no == 14)
     {
+        /* Pass stack_ptr directly - NO dereferencing needed! */
         page_fault_handler(stack_ptr);
         return;
     }
@@ -138,9 +133,9 @@ void isr_handler(void)
     terminal_writestring("\n");
 
     terminal_writestring("EIP: ");
-    print_hex32(STACK_EIP(stack_ptr));
+    print_hex32(STACK_EIP(stack_ptr));  /* Use STACK_* not ISR_STACK_* */
     terminal_writestring("  CS: ");
-    print_hex32(STACK_CS(stack_ptr));
+    print_hex32(STACK_CS(stack_ptr));   /* Use STACK_* not ISR_STACK_* */
     terminal_writestring("\n");
 
     terminal_writestring("\nSystem halted.\n");
@@ -149,7 +144,7 @@ void isr_handler(void)
         __asm__ volatile("hlt");
 }
 
-/* IRQ handler function pointers (unchanged) */
+/* IRQ handler function pointers */
 static interrupt_handler_t irq_handlers[16];
 
 void irq_install_handler(uint8_t irq, interrupt_handler_t handler)
@@ -168,7 +163,7 @@ void irq_uninstall_handler(uint8_t irq)
     }
 }
 
-/* IRQ handler C wrapper (keeps original ABI exactly) */
+/* IRQ handler C wrapper - Uses STACK_* macros (direct, no indirection) */
 void irq_handler_c(uint32_t *stack_ptr)
 {
     uint32_t int_no = STACK_INTNO(stack_ptr);
@@ -192,7 +187,7 @@ void irq_handler_c(uint32_t *stack_ptr)
     pic_send_eoi(irq);
 }
 
-/* IRQ handler entry (naked) - unchanged (keeps your working stub) */
+/* IRQ handler entry (naked) */
 __attribute__((naked)) void irq_handler(void)
 {
     __asm__ volatile(
