@@ -1,17 +1,15 @@
 /* kernel/kernel.c - Main kernel initialization
  *
- * UPDATED: Added task management and scheduler initialization
+ * UPDATED: Added TarFS with proper fallback to RAMFS
  */
 
 #include "kernel.h"
-
 #include "fpu.h"
-
 #include "task.h"
 #include "scheduler.h"
-
 #include "../fs/vfs.h"
 #include "../fs/ramfs.h"
+#include "../fs/tarfs.h"
 
 /* Linker symbols */
 extern uint8_t kernel_start;
@@ -140,22 +138,68 @@ void kernel_main(void)
      * ========================================================= */
     terminal_writestring("[VFS] Initializing virtual file system...\n");
     vfs_init();
+    terminal_writestring("[VFS] Virtual file system ready\n\n");
 
-    /* Mount root filesystem */
-    terminal_writestring("[RAMFS] Initializing RAM filesystem...\n");
+    /* Initialize filesystem drivers */
     ramfs_init();
+    tarfs_init();
+
+    /* =========================================================
+     * Step 12: Try to load persistent filesystem from disk
+     * ========================================================= */
+    terminal_writestring("[KERNEL] Loading root filesystem from disk...\n");
+
+    /* Try to load tar archive from Primary Master, LBA 0 */
+    vfs_node_t *tar_root = tarfs_load(ATA_PRIMARY_MASTER, 0);
+
+    if (tar_root)
+    {
+        /* Success! Use tar as root filesystem */
+        vfs_root = tar_root;
+        vfs_cwd = tar_root;
+
+        terminal_setcolor(vga_entry_color(VGA_COLOR_LIGHT_GREEN, VGA_COLOR_BLACK));
+        terminal_writestring("[KERNEL] ✓ Persistent filesystem mounted!\n");
+        terminal_setcolor(vga_entry_color(VGA_COLOR_WHITE, VGA_COLOR_BLACK));
+
+        /* Display boot message if it exists */
+        int fd = vfs_open("/boot.txt", O_RDONLY);
+        if (fd >= 0)
+        {
+            char buffer[512];
+            int bytes = vfs_read(fd, buffer, sizeof(buffer) - 1);
+            if (bytes > 0)
+            {
+                buffer[bytes] = '\0';
+                terminal_writestring("\n");
+                terminal_writestring(buffer);
+                terminal_writestring("\n");
+            }
+            vfs_close(fd);
+        }
+    }
+    else
+    {
+        /* Fallback to RAMFS if tar load fails */
+        terminal_setcolor(vga_entry_color(VGA_COLOR_LIGHT_RED, VGA_COLOR_BLACK));
+        terminal_writestring("[KERNEL] Warning: Could not load tar filesystem\n");
+        terminal_setcolor(vga_entry_color(VGA_COLOR_WHITE, VGA_COLOR_BLACK));
+        terminal_writestring("[KERNEL] Falling back to RAMFS\n");
+        
+        /* RAMFS already set vfs_root and vfs_cwd in ramfs_init() */
+    }
 
     terminal_writestring("[VFS] Root filesystem mounted\n\n");
 
     /* =========================================================
-     * Step 12: AI subsystem
+     * Step 13: AI subsystem
      * ========================================================= */
     terminal_writestring("[AI] Initializing AI learning system...\n");
     ai_init();
     terminal_writestring("[AI] AI system ready\n\n");
 
     /* =========================================================
-     * Step 13: Shell
+     * Step 14: Shell
      * ========================================================= */
     terminal_writestring("[SHELL] Starting interactive shell...\n");
     shell_init();
@@ -169,7 +213,7 @@ void kernel_main(void)
     terminal_setcolor(vga_entry_color(VGA_COLOR_WHITE, VGA_COLOR_BLACK));
 
     /* =========================================================
-     * Step 14: Run shell (never returns)
+     * Step 15: Run shell (never returns)
      * ========================================================= */
     shell_run();
 

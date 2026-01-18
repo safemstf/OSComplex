@@ -1,7 +1,7 @@
 /* kernel/kernel.h - Core kernel definitions
  *
  * Central header for all kernel subsystems.
- * UPDATED: Added MM subsystem headers and interrupt structures.
+ * UPDATED: Added ATA, VFS, and filesystem declarations
  */
 
 #ifndef KERNEL_H
@@ -59,6 +59,8 @@ void terminal_putchar(char c);
 void terminal_writestring(const char *data);
 void terminal_clear(void);
 void terminal_newline(void);
+void terminal_write_dec(uint32_t n);
+void terminal_write_hex(uint32_t value);
 
 /* ==================================================================
  * PORT I/O
@@ -143,7 +145,39 @@ void pic_send_eoi(uint8_t irq);
 
 void keyboard_init(void);
 void keyboard_handler(void);
+
+/* ==================================================================
+ * ATA DISK DRIVER
+ * ================================================================== */
+
 void ata_init(void);
+
+/* Drive identification constants */
+#define ATA_PRIMARY_MASTER     0
+#define ATA_PRIMARY_SLAVE      1
+#define ATA_SECONDARY_MASTER   2
+#define ATA_SECONDARY_SLAVE    3
+
+/* Sector size */
+#define ATA_SECTOR_SIZE        512
+
+/* ==================================================================
+ * VIRTUAL FILE SYSTEM & FILESYSTEMS
+ * ================================================================== */
+
+/* Forward declaration for VFS node type */
+struct vfs_node;
+
+void vfs_init(void);
+void ramfs_init(void);
+void tarfs_init(void);
+
+/* TarFS function that kernel.c needs */
+struct vfs_node* tarfs_load(uint8_t drive, uint32_t start_lba);
+
+/* VFS globals (defined in vfs.c) */
+extern struct vfs_node* vfs_root;
+extern struct vfs_node* vfs_cwd;
 
 /* ==================================================================
  * STRING UTILITIES
@@ -154,6 +188,8 @@ size_t strnlen(const char *str, size_t maxlen);
 int strcmp(const char *s1, const char *s2);
 int strncmp(const char *s1, const char *s2, size_t n);
 int stricmp(const char *s1, const char *s2);
+char *strrchr(const char *s, int c);
+char *strtok_r(char *str, const char *delim, char **saveptr);
 
 void *memset(void *dest, int val, size_t len);
 void *memcpy(void *dest, const void *src, size_t len);
@@ -190,6 +226,8 @@ void pmm_deinit_region(void *base, size_t size);
 void *pmm_alloc_block(void);
 void pmm_free_block(void *addr);
 uint32_t pmm_get_free_block_count(void);
+uint32_t pmm_get_used_blocks(void);
+uint32_t pmm_get_total_blocks(void);
 
 /* Paging */
 void paging_init(void);
@@ -227,12 +265,6 @@ void kfree(void *ptr);
 
 void shell_init(void);
 void shell_run(void);
-
-/* ==================================================================
- * VIRTUAL FILE SYSTEM
- * ================================================================== */
-
-void vfs_init(void);
 
 /* ==================================================================
  * AI SUBSYSTEM
