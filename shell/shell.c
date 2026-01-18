@@ -313,52 +313,188 @@ static void cmd_halt(void)
     __asm__ volatile("cli; hlt");
 }
 
+
+/* ====================================================================
+ * ls - List directory with colors and file sizes
+ * ==================================================================== */
+
 static void cmd_ls(const char *path)
 {
     vfs_node_t *dir;
 
+    /* Use current directory if no path specified */
     if (!path || !*path) {
         dir = vfs_cwd;
+        path = ".";
     } else {
-        dir = vfs_open_path(path);
+        dir = vfs_resolve_path(path);
     }
 
-    if (!dir || dir->type != VFS_DIRECTORY) {
-        terminal_writestring("ls: not a directory\n");
+    if (!dir) {
+        terminal_setcolor(vga_entry_color(VGA_COLOR_LIGHT_RED, VGA_COLOR_BLACK));
+        terminal_writestring("ls: ");
+        terminal_writestring(path);
+        terminal_writestring(": No such file or directory\n");
+        terminal_setcolor(vga_entry_color(VGA_COLOR_WHITE, VGA_COLOR_BLACK));
         return;
     }
 
+    if (dir->type != VFS_DIRECTORY) {
+        terminal_setcolor(vga_entry_color(VGA_COLOR_LIGHT_RED, VGA_COLOR_BLACK));
+        terminal_writestring("ls: ");
+        terminal_writestring(path);
+        terminal_writestring(": Not a directory\n");
+        terminal_setcolor(vga_entry_color(VGA_COLOR_WHITE, VGA_COLOR_BLACK));
+        return;
+    }
+
+    if (!dir->ops || !dir->ops->readdir) {
+        terminal_setcolor(vga_entry_color(VGA_COLOR_LIGHT_RED, VGA_COLOR_BLACK));
+        terminal_writestring("ls: filesystem does not support listing\n");
+        terminal_setcolor(vga_entry_color(VGA_COLOR_WHITE, VGA_COLOR_BLACK));
+        return;
+    }
+
+    terminal_writestring("\n");
+
+    /* Read and display directory entries */
+    bool empty = true;
     for (uint32_t i = 0;; i++) {
         dirent_t *ent = dir->ops->readdir(dir, i);
         if (!ent) break;
 
+        empty = false;
+
+        /* Color by type */
+        if (ent->type == VFS_DIRECTORY) {
+            terminal_setcolor(vga_entry_color(VGA_COLOR_LIGHT_BLUE, VGA_COLOR_BLACK));
+        } else {
+            terminal_setcolor(vga_entry_color(VGA_COLOR_WHITE, VGA_COLOR_BLACK));
+        }
+
         terminal_writestring(ent->name);
+
+        /* Add slash for directories */
+        if (ent->type == VFS_DIRECTORY) {
+            terminal_writestring("/");
+        }
+
         terminal_writestring("  ");
     }
 
-    terminal_writestring("\n");
-}
-
-static void cmd_pwd(void)
-{
-    const char *cwd = vfs_getcwd();
-    if (cwd) {
-        terminal_writestring(cwd);
-        terminal_writestring("\n");
+    if (empty) {
+        terminal_setcolor(vga_entry_color(VGA_COLOR_DARK_GREY, VGA_COLOR_BLACK));
+        terminal_writestring("(empty)");
     }
+
+    terminal_setcolor(vga_entry_color(VGA_COLOR_WHITE, VGA_COLOR_BLACK));
+    terminal_writestring("\n\n");
 }
 
-static void cmd_cd(const char *path)
+/* ====================================================================
+ * cat - Display file contents
+ * ==================================================================== */
+
+static void cmd_cat(const char *path)
 {
     if (!path || !*path) {
-        terminal_writestring("cd: missing operand\n");
+        terminal_writestring("cat: missing file operand\n");
         return;
     }
 
-    if (vfs_chdir(path) < 0) {
-        terminal_writestring("cd: no such directory\n");
+    /* Open file */
+    int fd = vfs_open(path, O_RDONLY);
+    if (fd < 0) {
+        terminal_setcolor(vga_entry_color(VGA_COLOR_LIGHT_RED, VGA_COLOR_BLACK));
+        terminal_writestring("cat: ");
+        terminal_writestring(path);
+        terminal_writestring(": No such file or directory\n");
+        terminal_setcolor(vga_entry_color(VGA_COLOR_WHITE, VGA_COLOR_BLACK));
+        return;
     }
+
+    /* Read and display file contents */
+    char buffer[256];
+    int bytes_read;
+    
+    terminal_writestring("\n");
+    
+    while ((bytes_read = vfs_read(fd, buffer, sizeof(buffer) - 1)) > 0) {
+        buffer[bytes_read] = '\0';  /* Null terminate */
+        terminal_writestring(buffer);
+    }
+    
+    terminal_writestring("\n");
+
+    vfs_close(fd);
 }
+
+/* ====================================================================
+ * echo - Write text to file (echo "text" > file)
+ * ==================================================================== */
+
+static void cmd_echo_to_file(const char *text, const char *filename)
+{
+    if (!filename || !*filename) {
+        terminal_writestring("echo: missing filename\n");
+        return;
+    }
+
+    /* Create or truncate file */
+    int fd = vfs_open(filename, O_WRONLY | O_CREAT | O_TRUNC);
+    if (fd < 0) {
+        terminal_setcolor(vga_entry_color(VGA_COLOR_LIGHT_RED, VGA_COLOR_BLACK));
+        terminal_writestring("echo: cannot create ");
+        terminal_writestring(filename);
+        terminal_writestring("\n");
+        terminal_setcolor(vga_entry_color(VGA_COLOR_WHITE, VGA_COLOR_BLACK));
+        return;
+    }
+
+    /* Write text to file */
+    if (text && *text) {
+        vfs_write(fd, text, strlen(text));
+    }
+
+    vfs_close(fd);
+
+    terminal_setcolor(vga_entry_color(VGA_COLOR_LIGHT_GREEN, VGA_COLOR_BLACK));
+    terminal_writestring("✓ Wrote to ");
+    terminal_writestring(filename);
+    terminal_writestring("\n");
+    terminal_setcolor(vga_entry_color(VGA_COLOR_WHITE, VGA_COLOR_BLACK));
+}
+
+/* ====================================================================
+ * rm - Remove file
+ * ==================================================================== */
+
+static void cmd_rm(const char *path)
+{
+    if (!path || !*path) {
+        terminal_writestring("rm: missing file operand\n");
+        return;
+    }
+
+    if (vfs_unlink(path) < 0) {
+        terminal_setcolor(vga_entry_color(VGA_COLOR_LIGHT_RED, VGA_COLOR_BLACK));
+        terminal_writestring("rm: cannot remove '");
+        terminal_writestring(path);
+        terminal_writestring("'\n");
+        terminal_setcolor(vga_entry_color(VGA_COLOR_WHITE, VGA_COLOR_BLACK));
+        return;
+    }
+
+    terminal_setcolor(vga_entry_color(VGA_COLOR_LIGHT_GREEN, VGA_COLOR_BLACK));
+    terminal_writestring("✓ Removed ");
+    terminal_writestring(path);
+    terminal_writestring("\n");
+    terminal_setcolor(vga_entry_color(VGA_COLOR_WHITE, VGA_COLOR_BLACK));
+}
+
+/* ====================================================================
+ * mkdir - Create directory
+ * ==================================================================== */
 
 static void cmd_mkdir(const char *path)
 {
@@ -367,9 +503,115 @@ static void cmd_mkdir(const char *path)
         return;
     }
 
-    if (vfs_mkdir(path, S_IRWXU) < 0) {
-        terminal_writestring("mkdir: failed\n");
+    if (vfs_mkdir(path, S_IRWXU | S_IRGRP | S_IXGRP | S_IROTH | S_IXOTH) < 0) {
+        terminal_setcolor(vga_entry_color(VGA_COLOR_LIGHT_RED, VGA_COLOR_BLACK));
+        terminal_writestring("mkdir: cannot create directory '");
+        terminal_writestring(path);
+        terminal_writestring("'\n");
+        terminal_setcolor(vga_entry_color(VGA_COLOR_WHITE, VGA_COLOR_BLACK));
+        return;
     }
+
+    terminal_setcolor(vga_entry_color(VGA_COLOR_LIGHT_GREEN, VGA_COLOR_BLACK));
+    terminal_writestring("✓ Created ");
+    terminal_writestring(path);
+    terminal_writestring("\n");
+    terminal_setcolor(vga_entry_color(VGA_COLOR_WHITE, VGA_COLOR_BLACK));
+}
+
+/* ====================================================================
+ * rmdir - Remove directory
+ * ==================================================================== */
+
+static void cmd_rmdir(const char *path)
+{
+    if (!path || !*path) {
+        terminal_writestring("rmdir: missing operand\n");
+        return;
+    }
+
+    if (vfs_rmdir(path) < 0) {
+        terminal_setcolor(vga_entry_color(VGA_COLOR_LIGHT_RED, VGA_COLOR_BLACK));
+        terminal_writestring("rmdir: failed to remove '");
+        terminal_writestring(path);
+        terminal_writestring("': Directory not empty or does not exist\n");
+        terminal_setcolor(vga_entry_color(VGA_COLOR_WHITE, VGA_COLOR_BLACK));
+        return;
+    }
+
+    terminal_setcolor(vga_entry_color(VGA_COLOR_LIGHT_GREEN, VGA_COLOR_BLACK));
+    terminal_writestring("✓ Removed directory ");
+    terminal_writestring(path);
+    terminal_writestring("\n");
+    terminal_setcolor(vga_entry_color(VGA_COLOR_WHITE, VGA_COLOR_BLACK));
+}
+
+/* ====================================================================
+ * pwd - Print working directory
+ * ==================================================================== */
+
+static void cmd_pwd(void)
+{
+    const char *cwd = vfs_getcwd();
+    if (cwd) {
+        if (cwd[0] == '\0') {
+            terminal_writestring("/\n");
+        } else {
+            terminal_writestring("/");
+            terminal_writestring(cwd);
+            terminal_writestring("\n");
+        }
+    }
+}
+
+/* ====================================================================
+ * cd - Change directory
+ * ==================================================================== */
+
+static void cmd_cd(const char *path)
+{
+    if (!path || !*path) {
+        /* No argument: go to root */
+        path = "/";
+    }
+
+    if (vfs_chdir(path) < 0) {
+        terminal_setcolor(vga_entry_color(VGA_COLOR_LIGHT_RED, VGA_COLOR_BLACK));
+        terminal_writestring("cd: ");
+        terminal_writestring(path);
+        terminal_writestring(": No such directory\n");
+        terminal_setcolor(vga_entry_color(VGA_COLOR_WHITE, VGA_COLOR_BLACK));
+    }
+}
+
+/* ====================================================================
+ * touch - Create empty file
+ * ==================================================================== */
+
+static void cmd_touch(const char *path)
+{
+    if (!path || !*path) {
+        terminal_writestring("touch: missing file operand\n");
+        return;
+    }
+
+    int fd = vfs_open(path, O_WRONLY | O_CREAT);
+    if (fd < 0) {
+        terminal_setcolor(vga_entry_color(VGA_COLOR_LIGHT_RED, VGA_COLOR_BLACK));
+        terminal_writestring("touch: cannot create '");
+        terminal_writestring(path);
+        terminal_writestring("'\n");
+        terminal_setcolor(vga_entry_color(VGA_COLOR_WHITE, VGA_COLOR_BLACK));
+        return;
+    }
+
+    vfs_close(fd);
+
+    terminal_setcolor(vga_entry_color(VGA_COLOR_LIGHT_GREEN, VGA_COLOR_BLACK));
+    terminal_writestring("✓ Created ");
+    terminal_writestring(path);
+    terminal_writestring("\n");
+    terminal_setcolor(vga_entry_color(VGA_COLOR_WHITE, VGA_COLOR_BLACK));
 }
 
 static void shell_execute_command(const char *cmd)
@@ -381,28 +623,89 @@ static void shell_execute_command(const char *cmd)
     while (*args && *args != ' ') args++;
     if (*args == ' ') args++;
 
+    /* System commands */
     if (strcmp(cmd, "help") == 0)         { cmd_help(); success = true; }
     else if (strcmp(cmd, "clear") == 0)   { terminal_clear(); success = true; }
     else if (strcmp(cmd, "about") == 0)   { cmd_about(); success = true; }
-    else if (strcmp(cmd, "ai") == 0)      { ai_show_stats(); success = true; }
-    else if (strncmp(cmd, "echo ", 5) == 0) { cmd_echo(args); success = true; }
+    else if (strcmp(cmd, "halt") == 0)    { cmd_halt(); }
+    
+    /* Memory commands */
     else if (strcmp(cmd, "meminfo") == 0) { cmd_meminfo(); success = true; }
     else if (strcmp(cmd, "sysinfo") == 0) { cmd_sysinfo(); success = true; }
     else if (strcmp(cmd, "testpf") == 0)  { cmd_testpf(); success = true; }
     else if (strcmp(cmd, "heaptest") == 0) { cmd_heaptest(); success = true; }
+    
+    /* Task commands */
     else if (strcmp(cmd, "ps") == 0)      { cmd_ps(); success = true; }
     else if (strcmp(cmd, "sched") == 0)   { cmd_sched(); success = true; }
     else if (strcmp(cmd, "spawn") == 0)   { cmd_spawn(); success = true; }
-    else if (strcmp(cmd, "halt") == 0)    { cmd_halt(); }
-
-    // vfs cmds
+    
+    /* AI command */
+    else if (strcmp(cmd, "ai") == 0)      { ai_show_stats(); success = true; }
+    
+    /* Echo command with redirect support */
+    else if (strncmp(cmd, "echo ", 5) == 0) {
+        /* Check for > redirect */
+        char *redirect = strstr(args, ">");
+        if (redirect) {
+            /* Make a working copy since we'll modify it */
+            char args_copy[256];
+            strncpy(args_copy, args, sizeof(args_copy) - 1);
+            args_copy[sizeof(args_copy) - 1] = '\0';
+            
+            /* Find > in the copy */
+            redirect = strstr(args_copy, ">");
+            if (redirect) {
+                /* Split at > */
+                *redirect = '\0';
+                
+                /* Get text (before >) and filename (after >) */
+                char *text = args_copy;
+                char *filename = redirect + 1;
+                
+                /* Trim leading whitespace from filename */
+                while (*filename == ' ' || *filename == '\t') filename++;
+                
+                /* Trim trailing whitespace from text */
+                char *text_end = redirect - 1;
+                while (text_end > text && (*text_end == ' ' || *text_end == '\t')) {
+                    *text_end = '\0';
+                    text_end--;
+                }
+                
+                /* Remove quotes from text if present */
+                if (text[0] == '"' || text[0] == '\'') {
+                    text++;
+                    size_t len = strlen(text);
+                    if (len > 0 && (text[len-1] == '"' || text[len-1] == '\'')) {
+                        text[len-1] = '\0';
+                    }
+                }
+                
+                cmd_echo_to_file(text, filename);
+            } else {
+                cmd_echo(args);
+            }
+        } else {
+            /* No redirect - just print to screen */
+            cmd_echo(args);
+        }
+        success = true;
+    }
+    
+    /* File system commands */
     else if (strcmp(cmd, "ls") == 0)           { cmd_ls(NULL); success = true; }
     else if (strncmp(cmd, "ls ", 3) == 0)      { cmd_ls(args); success = true; }
     else if (strcmp(cmd, "pwd") == 0)          { cmd_pwd(); success = true; }
+    else if (strcmp(cmd, "cd") == 0)           { cmd_cd("/"); success = true; }
     else if (strncmp(cmd, "cd ", 3) == 0)      { cmd_cd(args); success = true; }
     else if (strncmp(cmd, "mkdir ", 6) == 0)   { cmd_mkdir(args); success = true; }
+    else if (strncmp(cmd, "rmdir ", 6) == 0)   { cmd_rmdir(args); success = true; }
+    else if (strncmp(cmd, "cat ", 4) == 0)     { cmd_cat(args); success = true; }
+    else if (strncmp(cmd, "rm ", 3) == 0)      { cmd_rm(args); success = true; }
+    else if (strncmp(cmd, "touch ", 6) == 0)   { cmd_touch(args); success = true; }
 
-
+    /* Unknown command */
     else {
         terminal_setcolor(vga_entry_color(VGA_COLOR_LIGHT_RED, VGA_COLOR_BLACK));
         terminal_writestring("Unknown command: ");
