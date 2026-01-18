@@ -1,6 +1,6 @@
 /* kernel/kernel.c - Main kernel initialization
  *
- * UPDATED: Added TarFS with proper fallback to RAMFS
+ * FIXED: Proper filesystem priority: FAT → TarFS → RAMFS
  */
 
 #include "kernel.h"
@@ -10,6 +10,7 @@
 #include "../fs/vfs.h"
 #include "../fs/ramfs.h"
 #include "../fs/tarfs.h"
+#include "../fs/fat.h"
 
 /* Linker symbols */
 extern uint8_t kernel_start;
@@ -142,50 +143,67 @@ void kernel_main(void)
 
     /* Initialize filesystem drivers */
     ramfs_init();
+    fat_init();
     tarfs_init();
 
     /* =========================================================
      * Step 12: Try to load persistent filesystem from disk
+     * Priority: FAT16 → TarFS → RAMFS fallback
      * ========================================================= */
     terminal_writestring("[KERNEL] Loading root filesystem from disk...\n");
-
-    /* Try to load tar archive from Primary Master, LBA 0 */
-    vfs_node_t *tar_root = tarfs_load(ATA_PRIMARY_MASTER, 0);
-
-    if (tar_root)
-    {
-        /* Success! Use tar as root filesystem */
-        vfs_root = tar_root;
-        vfs_cwd = tar_root;
-
+    
+    bool filesystem_mounted = false;
+    
+    /* Try FAT16 first */
+    terminal_writestring("[KERNEL] Attempting to mount FAT16...\n");
+    vfs_node_t *fat_root = fat_mount(ATA_PRIMARY_MASTER, 0);
+    
+    if (fat_root) {
+        vfs_root = fat_root;
+        vfs_cwd = fat_root;
+        filesystem_mounted = true;
+        
         terminal_setcolor(vga_entry_color(VGA_COLOR_LIGHT_GREEN, VGA_COLOR_BLACK));
-        terminal_writestring("[KERNEL] ✓ Persistent filesystem mounted!\n");
+        terminal_writestring("[KERNEL] ✓ FAT16 filesystem mounted!\n");
         terminal_setcolor(vga_entry_color(VGA_COLOR_WHITE, VGA_COLOR_BLACK));
-
-        /* Display boot message if it exists */
-        int fd = vfs_open("/boot.txt", O_RDONLY);
-        if (fd >= 0)
-        {
-            char buffer[512];
-            int bytes = vfs_read(fd, buffer, sizeof(buffer) - 1);
-            if (bytes > 0)
-            {
-                buffer[bytes] = '\0';
-                terminal_writestring("\n");
-                terminal_writestring(buffer);
-                terminal_writestring("\n");
+    }
+    
+    /* If FAT failed, try TarFS */
+    if (!filesystem_mounted) {
+        terminal_writestring("[KERNEL] FAT16 not found, trying TarFS...\n");
+        vfs_node_t *tar_root = tarfs_load(ATA_PRIMARY_MASTER, 0);
+        
+        if (tar_root) {
+            vfs_root = tar_root;
+            vfs_cwd = tar_root;
+            filesystem_mounted = true;
+            
+            terminal_setcolor(vga_entry_color(VGA_COLOR_LIGHT_GREEN, VGA_COLOR_BLACK));
+            terminal_writestring("[KERNEL] ✓ TarFS filesystem mounted!\n");
+            terminal_setcolor(vga_entry_color(VGA_COLOR_WHITE, VGA_COLOR_BLACK));
+            
+            /* Display boot message if it exists */
+            int fd = vfs_open("/boot.txt", O_RDONLY);
+            if (fd >= 0) {
+                char buffer[512];
+                int bytes = vfs_read(fd, buffer, sizeof(buffer) - 1);
+                if (bytes > 0) {
+                    buffer[bytes] = '\0';
+                    terminal_writestring("\n");
+                    terminal_writestring(buffer);
+                    terminal_writestring("\n");
+                }
+                vfs_close(fd);
             }
-            vfs_close(fd);
         }
     }
-    else
-    {
-        /* Fallback to RAMFS if tar load fails */
+    
+    /* If both failed, fall back to RAMFS */
+    if (!filesystem_mounted) {
         terminal_setcolor(vga_entry_color(VGA_COLOR_LIGHT_RED, VGA_COLOR_BLACK));
-        terminal_writestring("[KERNEL] Warning: Could not load tar filesystem\n");
+        terminal_writestring("[KERNEL] No persistent filesystem found\n");
         terminal_setcolor(vga_entry_color(VGA_COLOR_WHITE, VGA_COLOR_BLACK));
-        terminal_writestring("[KERNEL] Falling back to RAMFS\n");
-        
+        terminal_writestring("[KERNEL] Using RAMFS (temporary storage)\n");
         /* RAMFS already set vfs_root and vfs_cwd in ramfs_init() */
     }
 

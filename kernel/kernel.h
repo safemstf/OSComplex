@@ -170,6 +170,12 @@ struct vfs_node;
 
 void vfs_init(void);
 void ramfs_init(void);
+/* After tarfs_init() declaration */
+void fat_init(void);
+struct vfs_node* fat_mount(uint8_t drive, uint32_t partition_start);
+int fat_sync(void);
+void fat_unmount(struct vfs_node* root);
+
 void tarfs_init(void);
 
 /* TarFS function that kernel.c needs */
