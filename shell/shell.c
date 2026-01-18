@@ -11,6 +11,7 @@
 #include "../kernel/task.h"
 #include "test_tasks.h"
 #include "../fs/vfs.h"
+#include "../drivers/ata.h"
 
 #define SHELL_BUFFER_SIZE 256
 #define SHELL_PROMPT "complex> "
@@ -60,6 +61,11 @@ static void cmd_help(void)
     terminal_writestring("\nOther:\n");
     terminal_writestring("  ai          - Show AI learning statistics\n");
     terminal_writestring("  echo <text> - Display text\n");
+
+    terminal_writestring("\nDisk Commands:\n");
+    terminal_writestring("  diskinfo       - Show ATA drive information\n");
+    terminal_writestring("  readsector <n> - Read sector at LBA n\n");
+    terminal_writestring("  writesector <n> <text> - Write text to sector n\n");
 
     terminal_writestring("\n");
     terminal_setcolor(vga_entry_color(VGA_COLOR_LIGHT_CYAN, VGA_COLOR_BLACK));
@@ -181,15 +187,21 @@ static void cmd_heaptest(void)
     terminal_writestring("[TEST 1] Small allocations (64 bytes each)...\n");
     void *ptr1 = kmalloc(64), *ptr2 = kmalloc(64), *ptr3 = kmalloc(64);
 
-    if (ptr1 && ptr2 && ptr3) {
+    if (ptr1 && ptr2 && ptr3)
+    {
         terminal_setcolor(vga_entry_color(VGA_COLOR_LIGHT_GREEN, VGA_COLOR_BLACK));
         terminal_writestring("         ✓ All allocations successful\n");
         terminal_setcolor(vga_entry_color(VGA_COLOR_WHITE, VGA_COLOR_BLACK));
-        terminal_writestring("         ptr1 = 0x"); terminal_write_hex((uint32_t)ptr1);
-        terminal_writestring("\n         ptr2 = 0x"); terminal_write_hex((uint32_t)ptr2);
-        terminal_writestring("\n         ptr3 = 0x"); terminal_write_hex((uint32_t)ptr3);
+        terminal_writestring("         ptr1 = 0x");
+        terminal_write_hex((uint32_t)ptr1);
+        terminal_writestring("\n         ptr2 = 0x");
+        terminal_write_hex((uint32_t)ptr2);
+        terminal_writestring("\n         ptr3 = 0x");
+        terminal_write_hex((uint32_t)ptr3);
         terminal_writestring("\n");
-    } else {
+    }
+    else
+    {
         terminal_setcolor(vga_entry_color(VGA_COLOR_LIGHT_RED, VGA_COLOR_BLACK));
         terminal_writestring("         ✗ Allocation failed\n");
         terminal_setcolor(vga_entry_color(VGA_COLOR_WHITE, VGA_COLOR_BLACK));
@@ -200,15 +212,20 @@ static void cmd_heaptest(void)
     uint32_t *test = (uint32_t *)ptr1;
     *test = 0x12345678;
 
-    if (*test == 0x12345678) {
+    if (*test == 0x12345678)
+    {
         terminal_setcolor(vga_entry_color(VGA_COLOR_LIGHT_GREEN, VGA_COLOR_BLACK));
         terminal_writestring("         ✓ Memory write/read successful\n");
         terminal_setcolor(vga_entry_color(VGA_COLOR_WHITE, VGA_COLOR_BLACK));
-        terminal_writestring("         Value = 0x"); terminal_write_hex(*test); terminal_writestring("\n");
+        terminal_writestring("         Value = 0x");
+        terminal_write_hex(*test);
+        terminal_writestring("\n");
     }
 
     terminal_writestring("\n[TEST 3] Freeing memory...\n");
-    kfree(ptr1); kfree(ptr2); kfree(ptr3);
+    kfree(ptr1);
+    kfree(ptr2);
+    kfree(ptr3);
     terminal_setcolor(vga_entry_color(VGA_COLOR_LIGHT_GREEN, VGA_COLOR_BLACK));
     terminal_writestring("         ✓ Memory freed successfully\n");
 
@@ -216,11 +233,14 @@ static void cmd_heaptest(void)
     terminal_writestring("\n[TEST 4] Large allocation (8KB)...\n");
     void *large = kmalloc(8192);
 
-    if (large) {
+    if (large)
+    {
         terminal_setcolor(vga_entry_color(VGA_COLOR_LIGHT_GREEN, VGA_COLOR_BLACK));
         terminal_writestring("         ✓ Large allocation successful\n");
         terminal_setcolor(vga_entry_color(VGA_COLOR_WHITE, VGA_COLOR_BLACK));
-        terminal_writestring("         ptr = 0x"); terminal_write_hex((uint32_t)large); terminal_writestring("\n");
+        terminal_writestring("         ptr = 0x");
+        terminal_write_hex((uint32_t)large);
+        terminal_writestring("\n");
         kfree(large);
         terminal_setcolor(vga_entry_color(VGA_COLOR_LIGHT_GREEN, VGA_COLOR_BLACK));
         terminal_writestring("         ✓ Large memory freed\n");
@@ -242,19 +262,33 @@ static void cmd_ps(void)
     terminal_writestring("---  -------  --------------------\n");
 
     task_t *task = kernel_task;
-    while (task) {
+    while (task)
+    {
         char buf[16];
         itoa(task->pid, buf);
         terminal_writestring(buf);
         terminal_writestring(task->pid < 10 ? "    " : (task->pid < 100 ? "   " : "  "));
 
-        switch (task->state) {
-        case TASK_READY:    terminal_writestring("READY  "); break;
-        case TASK_RUNNING:  terminal_writestring("RUN    "); break;
-        case TASK_BLOCKED:  terminal_writestring("BLOCK  "); break;
-        case TASK_SLEEPING: terminal_writestring("SLEEP  "); break;
-        case TASK_ZOMBIE:   terminal_writestring("ZOMBIE "); break;
-        default:            terminal_writestring("???    "); break;
+        switch (task->state)
+        {
+        case TASK_READY:
+            terminal_writestring("READY  ");
+            break;
+        case TASK_RUNNING:
+            terminal_writestring("RUN    ");
+            break;
+        case TASK_BLOCKED:
+            terminal_writestring("BLOCK  ");
+            break;
+        case TASK_SLEEPING:
+            terminal_writestring("SLEEP  ");
+            break;
+        case TASK_ZOMBIE:
+            terminal_writestring("ZOMBIE ");
+            break;
+        default:
+            terminal_writestring("???    ");
+            break;
         }
         terminal_writestring(" ");
         terminal_writestring(task->name);
@@ -278,11 +312,26 @@ static void cmd_sched(void)
     terminal_setcolor(vga_entry_color(VGA_COLOR_WHITE, VGA_COLOR_BLACK));
 
     char buf[16];
-    terminal_writestring("Total tasks       : "); itoa(stats.total_tasks, buf); terminal_writestring(buf); terminal_writestring("\n");
-    terminal_writestring("Ready tasks       : "); itoa(stats.ready_tasks, buf); terminal_writestring(buf); terminal_writestring("\n");
-    terminal_writestring("Blocked tasks     : "); itoa(stats.blocked_tasks, buf); terminal_writestring(buf); terminal_writestring("\n");
-    terminal_writestring("Context switches  : "); itoa(stats.context_switches, buf); terminal_writestring(buf); terminal_writestring("\n");
-    terminal_writestring("Total ticks       : "); itoa(stats.total_ticks, buf); terminal_writestring(buf); terminal_writestring("\n\n");
+    terminal_writestring("Total tasks       : ");
+    itoa(stats.total_tasks, buf);
+    terminal_writestring(buf);
+    terminal_writestring("\n");
+    terminal_writestring("Ready tasks       : ");
+    itoa(stats.ready_tasks, buf);
+    terminal_writestring(buf);
+    terminal_writestring("\n");
+    terminal_writestring("Blocked tasks     : ");
+    itoa(stats.blocked_tasks, buf);
+    terminal_writestring(buf);
+    terminal_writestring("\n");
+    terminal_writestring("Context switches  : ");
+    itoa(stats.context_switches, buf);
+    terminal_writestring(buf);
+    terminal_writestring("\n");
+    terminal_writestring("Total ticks       : ");
+    itoa(stats.total_ticks, buf);
+    terminal_writestring(buf);
+    terminal_writestring("\n\n");
 }
 
 static void cmd_spawn(void)
@@ -292,7 +341,8 @@ static void cmd_spawn(void)
     terminal_setcolor(vga_entry_color(VGA_COLOR_WHITE, VGA_COLOR_BLACK));
 
     task_t *t1 = task_create("syscall_test", syscall_test_task, 10);
-    if (t1) scheduler_add_task(t1);
+    if (t1)
+        scheduler_add_task(t1);
 
     terminal_setcolor(vga_entry_color(VGA_COLOR_LIGHT_GREEN, VGA_COLOR_BLACK));
     terminal_writestring("[SPAWN] Syscall test task created!\n");
@@ -313,7 +363,6 @@ static void cmd_halt(void)
     __asm__ volatile("cli; hlt");
 }
 
-
 /* ====================================================================
  * ls - List directory with colors and file sizes
  * ==================================================================== */
@@ -323,14 +372,18 @@ static void cmd_ls(const char *path)
     vfs_node_t *dir;
 
     /* Use current directory if no path specified */
-    if (!path || !*path) {
+    if (!path || !*path)
+    {
         dir = vfs_cwd;
         path = ".";
-    } else {
+    }
+    else
+    {
         dir = vfs_resolve_path(path);
     }
 
-    if (!dir) {
+    if (!dir)
+    {
         terminal_setcolor(vga_entry_color(VGA_COLOR_LIGHT_RED, VGA_COLOR_BLACK));
         terminal_writestring("ls: ");
         terminal_writestring(path);
@@ -339,7 +392,8 @@ static void cmd_ls(const char *path)
         return;
     }
 
-    if (dir->type != VFS_DIRECTORY) {
+    if (dir->type != VFS_DIRECTORY)
+    {
         terminal_setcolor(vga_entry_color(VGA_COLOR_LIGHT_RED, VGA_COLOR_BLACK));
         terminal_writestring("ls: ");
         terminal_writestring(path);
@@ -348,7 +402,8 @@ static void cmd_ls(const char *path)
         return;
     }
 
-    if (!dir->ops || !dir->ops->readdir) {
+    if (!dir->ops || !dir->ops->readdir)
+    {
         terminal_setcolor(vga_entry_color(VGA_COLOR_LIGHT_RED, VGA_COLOR_BLACK));
         terminal_writestring("ls: filesystem does not support listing\n");
         terminal_setcolor(vga_entry_color(VGA_COLOR_WHITE, VGA_COLOR_BLACK));
@@ -359,30 +414,37 @@ static void cmd_ls(const char *path)
 
     /* Read and display directory entries */
     bool empty = true;
-    for (uint32_t i = 0;; i++) {
+    for (uint32_t i = 0;; i++)
+    {
         dirent_t *ent = dir->ops->readdir(dir, i);
-        if (!ent) break;
+        if (!ent)
+            break;
 
         empty = false;
 
         /* Color by type */
-        if (ent->type == VFS_DIRECTORY) {
+        if (ent->type == VFS_DIRECTORY)
+        {
             terminal_setcolor(vga_entry_color(VGA_COLOR_LIGHT_BLUE, VGA_COLOR_BLACK));
-        } else {
+        }
+        else
+        {
             terminal_setcolor(vga_entry_color(VGA_COLOR_WHITE, VGA_COLOR_BLACK));
         }
 
         terminal_writestring(ent->name);
 
         /* Add slash for directories */
-        if (ent->type == VFS_DIRECTORY) {
+        if (ent->type == VFS_DIRECTORY)
+        {
             terminal_writestring("/");
         }
 
         terminal_writestring("  ");
     }
 
-    if (empty) {
+    if (empty)
+    {
         terminal_setcolor(vga_entry_color(VGA_COLOR_DARK_GREY, VGA_COLOR_BLACK));
         terminal_writestring("(empty)");
     }
@@ -397,14 +459,16 @@ static void cmd_ls(const char *path)
 
 static void cmd_cat(const char *path)
 {
-    if (!path || !*path) {
+    if (!path || !*path)
+    {
         terminal_writestring("cat: missing file operand\n");
         return;
     }
 
     /* Open file */
     int fd = vfs_open(path, O_RDONLY);
-    if (fd < 0) {
+    if (fd < 0)
+    {
         terminal_setcolor(vga_entry_color(VGA_COLOR_LIGHT_RED, VGA_COLOR_BLACK));
         terminal_writestring("cat: ");
         terminal_writestring(path);
@@ -416,14 +480,15 @@ static void cmd_cat(const char *path)
     /* Read and display file contents */
     char buffer[256];
     int bytes_read;
-    
+
     terminal_writestring("\n");
-    
-    while ((bytes_read = vfs_read(fd, buffer, sizeof(buffer) - 1)) > 0) {
-        buffer[bytes_read] = '\0';  /* Null terminate */
+
+    while ((bytes_read = vfs_read(fd, buffer, sizeof(buffer) - 1)) > 0)
+    {
+        buffer[bytes_read] = '\0'; /* Null terminate */
         terminal_writestring(buffer);
     }
-    
+
     terminal_writestring("\n");
 
     vfs_close(fd);
@@ -435,14 +500,16 @@ static void cmd_cat(const char *path)
 
 static void cmd_echo_to_file(const char *text, const char *filename)
 {
-    if (!filename || !*filename) {
+    if (!filename || !*filename)
+    {
         terminal_writestring("echo: missing filename\n");
         return;
     }
 
     /* Create or truncate file */
     int fd = vfs_open(filename, O_WRONLY | O_CREAT | O_TRUNC);
-    if (fd < 0) {
+    if (fd < 0)
+    {
         terminal_setcolor(vga_entry_color(VGA_COLOR_LIGHT_RED, VGA_COLOR_BLACK));
         terminal_writestring("echo: cannot create ");
         terminal_writestring(filename);
@@ -452,7 +519,8 @@ static void cmd_echo_to_file(const char *text, const char *filename)
     }
 
     /* Write text to file */
-    if (text && *text) {
+    if (text && *text)
+    {
         vfs_write(fd, text, strlen(text));
     }
 
@@ -471,12 +539,14 @@ static void cmd_echo_to_file(const char *text, const char *filename)
 
 static void cmd_rm(const char *path)
 {
-    if (!path || !*path) {
+    if (!path || !*path)
+    {
         terminal_writestring("rm: missing file operand\n");
         return;
     }
 
-    if (vfs_unlink(path) < 0) {
+    if (vfs_unlink(path) < 0)
+    {
         terminal_setcolor(vga_entry_color(VGA_COLOR_LIGHT_RED, VGA_COLOR_BLACK));
         terminal_writestring("rm: cannot remove '");
         terminal_writestring(path);
@@ -498,12 +568,14 @@ static void cmd_rm(const char *path)
 
 static void cmd_mkdir(const char *path)
 {
-    if (!path || !*path) {
+    if (!path || !*path)
+    {
         terminal_writestring("mkdir: missing operand\n");
         return;
     }
 
-    if (vfs_mkdir(path, S_IRWXU | S_IRGRP | S_IXGRP | S_IROTH | S_IXOTH) < 0) {
+    if (vfs_mkdir(path, S_IRWXU | S_IRGRP | S_IXGRP | S_IROTH | S_IXOTH) < 0)
+    {
         terminal_setcolor(vga_entry_color(VGA_COLOR_LIGHT_RED, VGA_COLOR_BLACK));
         terminal_writestring("mkdir: cannot create directory '");
         terminal_writestring(path);
@@ -525,12 +597,14 @@ static void cmd_mkdir(const char *path)
 
 static void cmd_rmdir(const char *path)
 {
-    if (!path || !*path) {
+    if (!path || !*path)
+    {
         terminal_writestring("rmdir: missing operand\n");
         return;
     }
 
-    if (vfs_rmdir(path) < 0) {
+    if (vfs_rmdir(path) < 0)
+    {
         terminal_setcolor(vga_entry_color(VGA_COLOR_LIGHT_RED, VGA_COLOR_BLACK));
         terminal_writestring("rmdir: failed to remove '");
         terminal_writestring(path);
@@ -553,10 +627,14 @@ static void cmd_rmdir(const char *path)
 static void cmd_pwd(void)
 {
     const char *cwd = vfs_getcwd();
-    if (cwd) {
-        if (cwd[0] == '\0') {
+    if (cwd)
+    {
+        if (cwd[0] == '\0')
+        {
             terminal_writestring("/\n");
-        } else {
+        }
+        else
+        {
             terminal_writestring("/");
             terminal_writestring(cwd);
             terminal_writestring("\n");
@@ -570,12 +648,14 @@ static void cmd_pwd(void)
 
 static void cmd_cd(const char *path)
 {
-    if (!path || !*path) {
+    if (!path || !*path)
+    {
         /* No argument: go to root */
         path = "/";
     }
 
-    if (vfs_chdir(path) < 0) {
+    if (vfs_chdir(path) < 0)
+    {
         terminal_setcolor(vga_entry_color(VGA_COLOR_LIGHT_RED, VGA_COLOR_BLACK));
         terminal_writestring("cd: ");
         terminal_writestring(path);
@@ -590,13 +670,15 @@ static void cmd_cd(const char *path)
 
 static void cmd_touch(const char *path)
 {
-    if (!path || !*path) {
+    if (!path || !*path)
+    {
         terminal_writestring("touch: missing file operand\n");
         return;
     }
 
     int fd = vfs_open(path, O_WRONLY | O_CREAT);
-    if (fd < 0) {
+    if (fd < 0)
+    {
         terminal_setcolor(vga_entry_color(VGA_COLOR_LIGHT_RED, VGA_COLOR_BLACK));
         terminal_writestring("touch: cannot create '");
         terminal_writestring(path);
@@ -614,99 +696,443 @@ static void cmd_touch(const char *path)
     terminal_setcolor(vga_entry_color(VGA_COLOR_WHITE, VGA_COLOR_BLACK));
 }
 
+/* ====================================================================
+ * diskinfo - Show detected ATA drives
+ * ==================================================================== */
+
+static void cmd_diskinfo(void)
+{
+    terminal_setcolor(vga_entry_color(VGA_COLOR_LIGHT_CYAN, VGA_COLOR_BLACK));
+    terminal_writestring("\n╔══════════════════════════════════════════════════════════╗\n");
+    terminal_writestring("║                  ATA Drive Information                  ║\n");
+    terminal_writestring("╚══════════════════════════════════════════════════════════╝\n\n");
+
+    terminal_setcolor(vga_entry_color(VGA_COLOR_WHITE, VGA_COLOR_BLACK));
+
+    const char *drive_names[] = {
+        "Primary Master",
+        "Primary Slave",
+        "Secondary Master",
+        "Secondary Slave"};
+
+    for (uint8_t i = 0; i < 4; i++)
+    {
+        ata_drive_info_t *info = ata_get_drive_info(i);
+
+        terminal_writestring(drive_names[i]);
+        terminal_writestring(": ");
+
+        if (info && info->present)
+        {
+            if (info->is_atapi)
+            {
+                terminal_setcolor(vga_entry_color(VGA_COLOR_LIGHT_BROWN, VGA_COLOR_BLACK));
+                terminal_writestring("ATAPI device (not supported)\n");
+                terminal_setcolor(vga_entry_color(VGA_COLOR_WHITE, VGA_COLOR_BLACK));
+            }
+            else
+            {
+                terminal_setcolor(vga_entry_color(VGA_COLOR_LIGHT_GREEN, VGA_COLOR_BLACK));
+                terminal_writestring("PRESENT\n");
+                terminal_setcolor(vga_entry_color(VGA_COLOR_WHITE, VGA_COLOR_BLACK));
+
+                terminal_writestring("  Model    : ");
+                terminal_writestring(info->model);
+                terminal_writestring("\n");
+
+                terminal_writestring("  Serial   : ");
+                terminal_writestring(info->serial);
+                terminal_writestring("\n");
+
+                terminal_writestring("  Firmware : ");
+                terminal_writestring(info->firmware);
+                terminal_writestring("\n");
+
+                terminal_writestring("  Sectors  : ");
+                terminal_write_dec(info->sectors);
+                terminal_writestring(" (");
+                terminal_write_dec(info->sectors / 2048);
+                terminal_writestring(" MB)\n");
+            }
+        }
+        else
+        {
+            terminal_setcolor(vga_entry_color(VGA_COLOR_DARK_GREY, VGA_COLOR_BLACK));
+            terminal_writestring("Not present\n");
+            terminal_setcolor(vga_entry_color(VGA_COLOR_WHITE, VGA_COLOR_BLACK));
+        }
+
+        terminal_writestring("\n");
+    }
+}
+
+/* ====================================================================
+ * readsector - Read and display a sector
+ * ==================================================================== */
+
+static void cmd_readsector(const char *args)
+{
+    if (!args || !*args)
+    {
+        terminal_writestring("Usage: readsector <lba>\n");
+        return;
+    }
+
+    /* Parse LBA (simple decimal for now) */
+    uint32_t lba = 0;
+    const char *p = args;
+    while (*p >= '0' && *p <= '9')
+    {
+        lba = lba * 10 + (*p - '0');
+        p++;
+    }
+
+    /* Allocate sector buffer */
+    uint8_t *buffer = (uint8_t *)kmalloc(512);
+    if (!buffer)
+    {
+        terminal_writestring("Error: Out of memory\n");
+        return;
+    }
+
+    /* Read sector */
+    terminal_writestring("Reading sector ");
+    terminal_write_dec(lba);
+    terminal_writestring(" from Primary Master...\n");
+
+    if (ata_read_sector(ATA_PRIMARY_MASTER, lba, buffer) < 0)
+    {
+        terminal_setcolor(vga_entry_color(VGA_COLOR_LIGHT_RED, VGA_COLOR_BLACK));
+        terminal_writestring("Error: Failed to read sector\n");
+        terminal_setcolor(vga_entry_color(VGA_COLOR_WHITE, VGA_COLOR_BLACK));
+        kfree(buffer);
+        return;
+    }
+
+    /* Display first 256 bytes in hex dump format */
+    terminal_writestring("\n");
+    for (int i = 0; i < 256; i += 16)
+    {
+        /* Offset */
+        terminal_write_hex(i);
+        terminal_writestring(": ");
+
+        /* Hex bytes */
+        for (int j = 0; j < 16; j++)
+        {
+            uint8_t byte = buffer[i + j];
+            char hex[3];
+            hex[0] = "0123456789ABCDEF"[byte >> 4];
+            hex[1] = "0123456789ABCDEF"[byte & 0x0F];
+            hex[2] = '\0';
+            terminal_writestring(hex);
+            terminal_writestring(" ");
+        }
+
+        terminal_writestring(" ");
+
+        /* ASCII representation */
+        for (int j = 0; j < 16; j++)
+        {
+            uint8_t byte = buffer[i + j];
+            if (byte >= 32 && byte <= 126)
+            {
+                terminal_putchar(byte);
+            }
+            else
+            {
+                terminal_putchar('.');
+            }
+        }
+
+        terminal_writestring("\n");
+    }
+
+    terminal_writestring("...\n\n");
+
+    kfree(buffer);
+}
+
+/* ====================================================================
+ * writesector - Write data to a sector
+ * ==================================================================== */
+
+static void cmd_writesector(const char *args)
+{
+    if (!args || !*args)
+    {
+        terminal_writestring("Usage: writesector <lba> <text>\n");
+        return;
+    }
+
+    /* Parse LBA */
+    uint32_t lba = 0;
+    const char *p = args;
+    while (*p >= '0' && *p <= '9')
+    {
+        lba = lba * 10 + (*p - '0');
+        p++;
+    }
+
+    /* Skip whitespace */
+    while (*p == ' ' || *p == '\t')
+        p++;
+
+    if (!*p)
+    {
+        terminal_writestring("Usage: writesector <lba> <text>\n");
+        return;
+    }
+
+    /* Allocate sector buffer and fill with zeros */
+    uint8_t *buffer = (uint8_t *)kmalloc(512);
+    if (!buffer)
+    {
+        terminal_writestring("Error: Out of memory\n");
+        return;
+    }
+    memset(buffer, 0, 512);
+
+    /* Copy text to buffer (up to 512 bytes) */
+    size_t len = 0;
+    while (*p && len < 512)
+    {
+        buffer[len++] = *p++;
+    }
+
+    /* Write sector */
+    terminal_writestring("Writing to sector ");
+    terminal_write_dec(lba);
+    terminal_writestring(" on Primary Master...\n");
+
+    if (ata_write_sector(ATA_PRIMARY_MASTER, lba, buffer) < 0)
+    {
+        terminal_setcolor(vga_entry_color(VGA_COLOR_LIGHT_RED, VGA_COLOR_BLACK));
+        terminal_writestring("Error: Failed to write sector\n");
+        terminal_setcolor(vga_entry_color(VGA_COLOR_WHITE, VGA_COLOR_BLACK));
+        kfree(buffer);
+        return;
+    }
+
+    terminal_setcolor(vga_entry_color(VGA_COLOR_LIGHT_GREEN, VGA_COLOR_BLACK));
+    terminal_writestring("✓ Sector written successfully\n");
+    terminal_setcolor(vga_entry_color(VGA_COLOR_WHITE, VGA_COLOR_BLACK));
+
+    kfree(buffer);
+}
+
 static void shell_execute_command(const char *cmd)
 {
-    if (!cmd || !*cmd) return;
+    if (!cmd || !*cmd)
+        return;
 
     bool success = false;
     const char *args = cmd;
-    while (*args && *args != ' ') args++;
-    if (*args == ' ') args++;
+    while (*args && *args != ' ')
+        args++;
+    if (*args == ' ')
+        args++;
 
     /* System commands */
-    if (strcmp(cmd, "help") == 0)         { cmd_help(); success = true; }
-    else if (strcmp(cmd, "clear") == 0)   { terminal_clear(); success = true; }
-    else if (strcmp(cmd, "about") == 0)   { cmd_about(); success = true; }
-    else if (strcmp(cmd, "halt") == 0)    { cmd_halt(); }
-    
+    if (strcmp(cmd, "help") == 0)
+    {
+        cmd_help();
+        success = true;
+    }
+    else if (strcmp(cmd, "clear") == 0)
+    {
+        terminal_clear();
+        success = true;
+    }
+    else if (strcmp(cmd, "about") == 0)
+    {
+        cmd_about();
+        success = true;
+    }
+    else if (strcmp(cmd, "halt") == 0)
+    {
+        cmd_halt();
+    }
+
     /* Memory commands */
-    else if (strcmp(cmd, "meminfo") == 0) { cmd_meminfo(); success = true; }
-    else if (strcmp(cmd, "sysinfo") == 0) { cmd_sysinfo(); success = true; }
-    else if (strcmp(cmd, "testpf") == 0)  { cmd_testpf(); success = true; }
-    else if (strcmp(cmd, "heaptest") == 0) { cmd_heaptest(); success = true; }
-    
+    else if (strcmp(cmd, "meminfo") == 0)
+    {
+        cmd_meminfo();
+        success = true;
+    }
+    else if (strcmp(cmd, "sysinfo") == 0)
+    {
+        cmd_sysinfo();
+        success = true;
+    }
+    else if (strcmp(cmd, "testpf") == 0)
+    {
+        cmd_testpf();
+        success = true;
+    }
+    else if (strcmp(cmd, "heaptest") == 0)
+    {
+        cmd_heaptest();
+        success = true;
+    }
+
     /* Task commands */
-    else if (strcmp(cmd, "ps") == 0)      { cmd_ps(); success = true; }
-    else if (strcmp(cmd, "sched") == 0)   { cmd_sched(); success = true; }
-    else if (strcmp(cmd, "spawn") == 0)   { cmd_spawn(); success = true; }
-    
+    else if (strcmp(cmd, "ps") == 0)
+    {
+        cmd_ps();
+        success = true;
+    }
+    else if (strcmp(cmd, "sched") == 0)
+    {
+        cmd_sched();
+        success = true;
+    }
+    else if (strcmp(cmd, "spawn") == 0)
+    {
+        cmd_spawn();
+        success = true;
+    }
+
     /* AI command */
-    else if (strcmp(cmd, "ai") == 0)      { ai_show_stats(); success = true; }
-    
+    else if (strcmp(cmd, "ai") == 0)
+    {
+        ai_show_stats();
+        success = true;
+    }
+
     /* Echo command with redirect support */
-    else if (strncmp(cmd, "echo ", 5) == 0) {
+    else if (strncmp(cmd, "echo ", 5) == 0)
+    {
         /* Check for > redirect */
         char *redirect = strstr(args, ">");
-        if (redirect) {
+        if (redirect)
+        {
             /* Make a working copy since we'll modify it */
             char args_copy[256];
             strncpy(args_copy, args, sizeof(args_copy) - 1);
             args_copy[sizeof(args_copy) - 1] = '\0';
-            
+
             /* Find > in the copy */
             redirect = strstr(args_copy, ">");
-            if (redirect) {
+            if (redirect)
+            {
                 /* Split at > */
                 *redirect = '\0';
-                
+
                 /* Get text (before >) and filename (after >) */
                 char *text = args_copy;
                 char *filename = redirect + 1;
-                
+
                 /* Trim leading whitespace from filename */
-                while (*filename == ' ' || *filename == '\t') filename++;
-                
+                while (*filename == ' ' || *filename == '\t')
+                    filename++;
+
                 /* Trim trailing whitespace from text */
                 char *text_end = redirect - 1;
-                while (text_end > text && (*text_end == ' ' || *text_end == '\t')) {
+                while (text_end > text && (*text_end == ' ' || *text_end == '\t'))
+                {
                     *text_end = '\0';
                     text_end--;
                 }
-                
+
                 /* Remove quotes from text if present */
-                if (text[0] == '"' || text[0] == '\'') {
+                if (text[0] == '"' || text[0] == '\'')
+                {
                     text++;
                     size_t len = strlen(text);
-                    if (len > 0 && (text[len-1] == '"' || text[len-1] == '\'')) {
-                        text[len-1] = '\0';
+                    if (len > 0 && (text[len - 1] == '"' || text[len - 1] == '\''))
+                    {
+                        text[len - 1] = '\0';
                     }
                 }
-                
+
                 cmd_echo_to_file(text, filename);
-            } else {
+            }
+            else
+            {
                 cmd_echo(args);
             }
-        } else {
+        }
+        else
+        {
             /* No redirect - just print to screen */
             cmd_echo(args);
         }
         success = true;
     }
-    
+
     /* File system commands */
-    else if (strcmp(cmd, "ls") == 0)           { cmd_ls(NULL); success = true; }
-    else if (strncmp(cmd, "ls ", 3) == 0)      { cmd_ls(args); success = true; }
-    else if (strcmp(cmd, "pwd") == 0)          { cmd_pwd(); success = true; }
-    else if (strcmp(cmd, "cd") == 0)           { cmd_cd("/"); success = true; }
-    else if (strncmp(cmd, "cd ", 3) == 0)      { cmd_cd(args); success = true; }
-    else if (strncmp(cmd, "mkdir ", 6) == 0)   { cmd_mkdir(args); success = true; }
-    else if (strncmp(cmd, "rmdir ", 6) == 0)   { cmd_rmdir(args); success = true; }
-    else if (strncmp(cmd, "cat ", 4) == 0)     { cmd_cat(args); success = true; }
-    else if (strncmp(cmd, "rm ", 3) == 0)      { cmd_rm(args); success = true; }
-    else if (strncmp(cmd, "touch ", 6) == 0)   { cmd_touch(args); success = true; }
+    else if (strcmp(cmd, "ls") == 0)
+    {
+        cmd_ls(NULL);
+        success = true;
+    }
+    else if (strncmp(cmd, "ls ", 3) == 0)
+    {
+        cmd_ls(args);
+        success = true;
+    }
+    else if (strcmp(cmd, "pwd") == 0)
+    {
+        cmd_pwd();
+        success = true;
+    }
+    else if (strcmp(cmd, "cd") == 0)
+    {
+        cmd_cd("/");
+        success = true;
+    }
+    else if (strncmp(cmd, "cd ", 3) == 0)
+    {
+        cmd_cd(args);
+        success = true;
+    }
+    else if (strncmp(cmd, "mkdir ", 6) == 0)
+    {
+        cmd_mkdir(args);
+        success = true;
+    }
+    else if (strncmp(cmd, "rmdir ", 6) == 0)
+    {
+        cmd_rmdir(args);
+        success = true;
+    }
+    else if (strncmp(cmd, "cat ", 4) == 0)
+    {
+        cmd_cat(args);
+        success = true;
+    }
+    else if (strncmp(cmd, "rm ", 3) == 0)
+    {
+        cmd_rm(args);
+        success = true;
+    }
+    else if (strncmp(cmd, "touch ", 6) == 0)
+    {
+        cmd_touch(args);
+        success = true;
+    }
+
+    /* Disk commands */
+    else if (strcmp(cmd, "diskinfo") == 0)
+    {
+        cmd_diskinfo();
+        success = true;
+    }
+    else if (strncmp(cmd, "readsector ", 11) == 0)
+    {
+        cmd_readsector(args);
+        success = true;
+    }
+    else if (strncmp(cmd, "writesector ", 12) == 0)
+    {
+        cmd_writesector(args);
+        success = true;
+    }
 
     /* Unknown command */
-    else {
+    else
+    {
         terminal_setcolor(vga_entry_color(VGA_COLOR_LIGHT_RED, VGA_COLOR_BLACK));
         terminal_writestring("Unknown command: ");
         terminal_writestring(cmd);
@@ -716,7 +1142,8 @@ static void shell_execute_command(const char *cmd)
         terminal_writestring("Type 'help' for available commands\n");
 
         const char *suggestion = ai_predict_command(cmd);
-        if (suggestion) {
+        if (suggestion)
+        {
             terminal_setcolor(vga_entry_color(VGA_COLOR_LIGHT_CYAN, VGA_COLOR_BLACK));
             terminal_writestring("[AI] Did you mean: ");
             terminal_setcolor(vga_entry_color(VGA_COLOR_LIGHT_GREEN, VGA_COLOR_BLACK));
@@ -730,12 +1157,15 @@ static void shell_execute_command(const char *cmd)
 
 static void shell_process_input(void)
 {
-    if (!keyboard_has_data()) return;
+    if (!keyboard_has_data())
+        return;
 
     char c = keyboard_buffer_pop();
-    if (!c) return;
+    if (!c)
+        return;
 
-    switch (c) {
+    switch (c)
+    {
     case '\n':
         terminal_putchar('\n');
         command_buffer[command_pos] = '\0';
@@ -745,7 +1175,8 @@ static void shell_process_input(void)
         break;
 
     case '\b':
-        if (command_pos > 0) {
+        if (command_pos > 0)
+        {
             command_pos--;
             terminal_putchar('\b');
         }
@@ -760,7 +1191,8 @@ static void shell_process_input(void)
         break;
 
     default:
-        if (command_pos < SHELL_BUFFER_SIZE - 1) {
+        if (command_pos < SHELL_BUFFER_SIZE - 1)
+        {
             command_buffer[command_pos++] = c;
             terminal_putchar(c);
         }
@@ -784,7 +1216,8 @@ void shell_run(void)
 {
     shell_display_prompt();
 
-    while (1) {
+    while (1)
+    {
         shell_process_input();
         __asm__ volatile("hlt");
     }

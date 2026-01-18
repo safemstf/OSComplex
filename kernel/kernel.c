@@ -115,6 +115,7 @@ void kernel_main(void)
     terminal_writestring("[DRIVERS] Initializing device drivers...\n");
     keyboard_init();
     timer_init();
+    ata_init();
     terminal_writestring("[DRIVERS] All drivers initialized\n");
 
     /* =========================================================

@@ -31,7 +31,7 @@ KERNEL = OSComplex.bin
 BOOT_ASM = boot/boot.s
 INT_ASM = interrupts/interrupts.s interrupts/syscall.s
 INT_C = interrupts/idt.c interrupts/isr.c interrupts/pagefault.c
-DRIVER_C = drivers/terminal.c drivers/keyboard.c drivers/pic.c drivers/timer.c
+DRIVER_C = drivers/terminal.c drivers/keyboard.c drivers/pic.c drivers/timer.c drivers/ata.c
 KERNEL_C = kernel/kernel.c kernel/fpu.c kernel/task.c kernel/scheduler.c kernel/syscall.c
 LIB_C = lib/string.c
 AI_C = ai/ai.c
@@ -105,7 +105,7 @@ run: $(KERNEL)
 	@echo "Press Ctrl+Alt+G to release mouse"
 	@echo "Press Ctrl+C to exit"
 	@echo ""
-	qemu-system-i386 -kernel $(KERNEL).elf -m 32M
+	qemu-system-i386 -kernel $(KERNEL).elf -m 32M -hda disk.img
 
 debug: $(KERNEL)
 	@echo ""
