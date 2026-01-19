@@ -262,40 +262,45 @@ static void cmd_ps(void)
     terminal_writestring("---  -------  --------------------\n");
 
     task_t *task = kernel_task;
-    while (task)
-    {
+    if (!task) {
+        terminal_writestring("(no tasks)\n\n");
+        return;
+    }
+    
+    task_t *start = task;  // Remember where we started
+    do {
         char buf[16];
         itoa(task->pid, buf);
         terminal_writestring(buf);
         terminal_writestring(task->pid < 10 ? "    " : (task->pid < 100 ? "   " : "  "));
 
-        switch (task->state)
-        {
-        case TASK_READY:
-            terminal_writestring("READY  ");
-            break;
-        case TASK_RUNNING:
-            terminal_writestring("RUN    ");
-            break;
-        case TASK_BLOCKED:
-            terminal_writestring("BLOCK  ");
-            break;
-        case TASK_SLEEPING:
-            terminal_writestring("SLEEP  ");
-            break;
-        case TASK_ZOMBIE:
-            terminal_writestring("ZOMBIE ");
-            break;
-        default:
-            terminal_writestring("???    ");
-            break;
+        switch (task->state) {
+            case TASK_READY:
+                terminal_writestring("READY  ");
+                break;
+            case TASK_RUNNING:
+                terminal_writestring("RUN    ");
+                break;
+            case TASK_BLOCKED:
+                terminal_writestring("BLOCK  ");
+                break;
+            case TASK_SLEEPING:
+                terminal_writestring("SLEEP  ");
+                break;
+            case TASK_ZOMBIE:
+                terminal_writestring("ZOMBIE ");
+                break;
+            default:
+                terminal_writestring("???    ");
+                break;
         }
+        
         terminal_writestring(" ");
         terminal_writestring(task->name);
         terminal_writestring("\n");
 
         task = task->next;
-    }
+    } while (task && task != start);  // ← STOP when we loop back!
 
     terminal_writestring("\n");
 }

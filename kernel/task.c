@@ -8,13 +8,14 @@
 #include "kernel.h"
 #include "../mm/vmm.h"
 #include "../mm/pmm.h"
+#include "scheduler.h"
 
 /* ================================================================
  * GLOBAL STATE
  * ================================================================ */
 
 /* Current running task */
-static task_t *current_task = NULL;
+task_t *current_task = NULL;
 
 /* Next PID to assign */
 static uint32_t next_pid = 1;
@@ -30,6 +31,7 @@ static task_t *task_list_head = NULL;
  * ================================================================ */
 static void idle_task_entry(void);
 static void task_setup_stack(task_t *task, void (*entry_point)(void));
+extern void task_switch_asm(task_t *old_task, task_t *new_task);
 
 /* ================================================================
  * INITIALIZATION
@@ -168,7 +170,6 @@ static void task_setup_stack(task_t *task, void (*entry_point)(void))
  * TASK SWITCHING (assembly stub will be created separately)
  * ================================================================ */
 
-/* For now, simple C version (will be replaced with assembly) */
 void task_switch(task_t *new_task)
 {
     if (!new_task || new_task == current_task) {
@@ -186,8 +187,8 @@ void task_switch(task_t *new_task)
     /* Update current */
     current_task = new_task;
     
-    /* Actual context switch will be done in assembly */
-    /* For now, this is a placeholder */
+    /* Call assembly context switch */
+    task_switch_asm(old_task, new_task);
 }
 
 /* ================================================================
@@ -251,8 +252,15 @@ void task_unblock(task_t *task)
 
 void task_sleep(uint32_t ms)
 {
-    (void)ms;
-    task_block();
+    if (!current_task) return;
+    
+    extern scheduler_stats_t scheduler_get_stats(void);
+    scheduler_stats_t stats = scheduler_get_stats();
+    
+    current_task->wake_time = stats.total_ticks + ms;
+    current_task->state = TASK_SLEEPING;
+    
+    task_yield();
 }
 
 void task_destroy(task_t *task)

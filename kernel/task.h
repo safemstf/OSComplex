@@ -77,9 +77,11 @@ typedef struct task {
     uint32_t kernel_stack;       /* Kernel mode stack */
     uint32_t user_stack;         /* User mode stack */
     
+
     /* Scheduling */
-    uint32_t time_slice;         /* Remaining time quantum */
+    uint32_t time_slice;         /* Remaining time quantum (ticks) */
     uint32_t total_time;         /* Total CPU time used */
+    uint32_t wake_time;          /* Wake up at this tick (for TASK_SLEEPING) */
     
     /* Task tree */
     struct task *parent;         /* Parent task */
@@ -127,5 +129,6 @@ void task_sleep(uint32_t ms);
  * KERNEL TASK
  * ================================================================ */
 extern task_t *kernel_task;
+extern task_t *current_task; 
 
 #endif /* TASK_H */

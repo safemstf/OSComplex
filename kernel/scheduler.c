@@ -1,19 +1,31 @@
-/* kernel/scheduler.c - Task Scheduler Implementation
+/* kernel/scheduler.c - Round-Robin Task Scheduler
  * 
- * Implements a simple round-robin scheduler with priorities.
- * Called by timer interrupt every 10ms to switch tasks.
+ * Manages task execution order using round-robin algorithm.
+ * Each task gets an equal time slice (10ms by default).
  */
 
 #include "scheduler.h"
-#include "task.h"
 #include "kernel.h"
+#include "task.h"
 
 /* ================================================================
- * SCHEDULER STATE
+ * GLOBAL STATE
  * ================================================================ */
 
 static scheduler_stats_t stats = {0};
-static bool scheduler_enabled = false;
+static bool scheduler_running = false;
+
+/* Ready queue - circular linked list of tasks */
+static task_t *ready_queue = NULL;
+static task_t *ready_queue_tail = NULL;
+
+/* External references */
+extern task_t *current_task;
+extern task_t *kernel_task;
+
+/* Forward declarations */
+static void update_statistics(void);
+static task_t* get_next_ready_task(void);
 
 /* ================================================================
  * INITIALIZATION
@@ -25,14 +37,20 @@ void scheduler_init(void)
     terminal_writestring("[SCHEDULER] Initializing scheduler...\n");
     
     memset(&stats, 0, sizeof(stats));
-    scheduler_enabled = true;
+    
+    ready_queue = NULL;
+    ready_queue_tail = NULL;
+    scheduler_running = false;
+    
+    /* Add kernel task to ready queue */
+    if (kernel_task) {
+        scheduler_add_task(kernel_task);
+    }
+    
+    scheduler_running = true;
     
     terminal_setcolor(vga_entry_color(VGA_COLOR_LIGHT_GREEN, VGA_COLOR_BLACK));
-    terminal_writestring("[SCHEDULER] Round-robin scheduler ready (");
-    char buf[16];
-    itoa(SCHEDULER_TIME_SLICE_MS, buf);
-    terminal_writestring(buf);
-    terminal_writestring("ms time slice)\n");
+    terminal_writestring("[SCHEDULER] Scheduler ready\n");
     terminal_setcolor(vga_entry_color(VGA_COLOR_WHITE, VGA_COLOR_BLACK));
 }
 
@@ -44,118 +62,203 @@ void scheduler_add_task(task_t *task)
 {
     if (!task) return;
     
-    stats.total_tasks++;
-    if (task->state == TASK_READY) {
-        stats.ready_tasks++;
-    } else if (task->state == TASK_BLOCKED) {
-        stats.blocked_tasks++;
+    /* Don't add if already in queue */
+    task_t *curr = ready_queue;
+    while (curr) {
+        if (curr == task) return;
+        if (curr->next == ready_queue) break;  /* Full circle */
+        curr = curr->next;
     }
+    
+    /* Add to ready queue */
+    if (!ready_queue) {
+        /* First task in queue */
+        ready_queue = task;
+        ready_queue_tail = task;
+        task->next = task;  /* Circular */
+    } else {
+        /* Add to end */
+        ready_queue_tail->next = task;
+        ready_queue_tail = task;
+        task->next = ready_queue;  /* Circular */
+    }
+    
+    task->state = TASK_READY;
+    stats.total_tasks++;
 }
 
 void scheduler_remove_task(task_t *task)
 {
-    if (!task) return;
+    if (!task || !ready_queue) return;
     
-    if (stats.total_tasks > 0) {
-        stats.total_tasks--;
+    /* Find and remove from queue */
+    if (ready_queue == task) {
+        /* Removing head */
+        if (ready_queue == ready_queue_tail) {
+            /* Only task in queue */
+            ready_queue = NULL;
+            ready_queue_tail = NULL;
+        } else {
+            ready_queue_tail->next = task->next;
+            ready_queue = task->next;
+        }
+    } else {
+        /* Find previous task */
+        task_t *prev = ready_queue;
+        while (prev->next != task && prev->next != ready_queue) {
+            prev = prev->next;
+        }
+        
+        if (prev->next == task) {
+            prev->next = task->next;
+            if (task == ready_queue_tail) {
+                ready_queue_tail = prev;
+            }
+        }
     }
     
-    if (task->state == TASK_READY && stats.ready_tasks > 0) {
-        stats.ready_tasks--;
-    } else if (task->state == TASK_BLOCKED && stats.blocked_tasks > 0) {
-        stats.blocked_tasks--;
-    }
+    task->next = NULL;
+    if (stats.total_tasks > 0) stats.total_tasks--;
 }
 
 /* ================================================================
- * SCHEDULER ALGORITHM
+ * TASK SELECTION
  * ================================================================ */
 
-task_t* scheduler_pick_next(void)
+static task_t* get_next_ready_task(void)
 {
-    task_t *current = task_current();
-    if (!current) {
-        return kernel_task;
-    }
+    if (!ready_queue) return kernel_task;
     
-    /* Simple round-robin: find next READY task */
-    task_t *next = current->next;
+    /* Start from current position in queue */
+    task_t *start = current_task ? current_task->next : ready_queue;
+    task_t *task = start;
     
-    if (!next) {
-        next = kernel_task;
-    }
-    
-    /* Find first ready task */
-    task_t *start = next;
-    while (next) {
-        if (next->state == TASK_READY || next->state == TASK_RUNNING) {
-            return next;
+    /* Find next READY task */
+    do {
+        if (task->state == TASK_READY) {
+            return task;
         }
-        
-        next = next->next;
-        if (!next) {
-            next = kernel_task;
-        }
-        
-        if (next == start) {
-            break;
-        }
-    }
+        task = task->next;
+    } while (task != start);
     
+    /* No ready tasks, return kernel idle */
     return kernel_task;
 }
 
-void scheduler_schedule(void)
+task_t* scheduler_pick_next(void)
 {
-    if (!scheduler_enabled) {
-        return;
-    }
+    update_statistics();
     
-    task_t *current = task_current();
-    if (!current) {
-        return;
-    }
+    /* Get next ready task */
+    task_t *next = get_next_ready_task();
     
-    /* Decrement time slice */
-    if (current->time_slice > 0) {
-        current->time_slice--;
-    }
+    /* Reset time slice */
+    next->time_slice = SCHEDULER_TIME_SLICE_MS;
     
-    /* If time slice expired, pick next task */
-    if (current->time_slice == 0) {
-        task_t *next = scheduler_pick_next();
-        
-        if (next && next != current) {
-            next->time_slice = SCHEDULER_TIME_SLICE_MS;
-            stats.context_switches++;
-            task_switch(next);
-        } else {
-            current->time_slice = SCHEDULER_TIME_SLICE_MS;
-        }
-    }
+    return next;
 }
 
 /* ================================================================
- * TIMER INTEGRATION
+ * SCHEDULING
  * ================================================================ */
 
 void scheduler_tick(void)
 {
+    if (!scheduler_running) return;
+    
     stats.total_ticks++;
     
-    task_t *current = task_current();
-    if (current) {
-        current->total_time++;
+    /* Update sleeping tasks */
+    task_t *task = ready_queue;
+    if (task) {
+        task_t *start = task;
+        do {
+            if (task->state == TASK_SLEEPING) {
+                if (task->wake_time > 0 && stats.total_ticks >= task->wake_time) {
+                    task->state = TASK_READY;
+                    task->wake_time = 0;
+                }
+            }
+            task = task->next;
+        } while (task != start);
     }
     
-    scheduler_schedule();
+    /* Decrement current task's time slice */
+    if (current_task && current_task->state == TASK_RUNNING) {
+        if (current_task->time_slice > 0) {
+            current_task->time_slice--;
+            current_task->total_time++;
+        }
+        
+        /* Time slice expired? */
+        if (current_task->time_slice == 0) {
+            scheduler_schedule();
+        }
+    }
+}
+
+void scheduler_schedule(void)
+{
+    if (!scheduler_running) return;
+    
+    /* Pick next task */
+    task_t *next = scheduler_pick_next();
+    
+    if (!next || next == current_task) {
+        /* Reset current task's time slice */
+        if (current_task) {
+            current_task->time_slice = SCHEDULER_TIME_SLICE_MS;
+        }
+        return;
+    }
+    
+    /* Perform context switch */
+    task_t *old = current_task;
+    
+    if (old && old->state == TASK_RUNNING) {
+        old->state = TASK_READY;
+    }
+    
+    next->state = TASK_RUNNING;
+    current_task = next;
+    
+    stats.context_switches++;
+    
+    /* Context switch happens here (will implement in assembly) */
+    task_switch(next);
 }
 
 /* ================================================================
  * STATISTICS
  * ================================================================ */
 
+static void update_statistics(void)
+{
+    stats.ready_tasks = 0;
+    stats.blocked_tasks = 0;
+    
+    task_t *task = ready_queue;
+    if (!task) return;
+    
+    task_t *start = task;
+    do {
+        switch (task->state) {
+            case TASK_READY:
+                stats.ready_tasks++;
+                break;
+            case TASK_BLOCKED:
+            case TASK_SLEEPING:
+                stats.blocked_tasks++;
+                break;
+            default:
+                break;
+        }
+        task = task->next;
+    } while (task != start);
+}
+
 scheduler_stats_t scheduler_get_stats(void)
 {
+    update_statistics();
     return stats;
 }

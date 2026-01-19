@@ -28,8 +28,10 @@ KERNEL = OSComplex.bin
 # ============================================================
 # SOURCE FILES (organized by directory)
 # ============================================================
+# SOURCE FILES
 BOOT_ASM = boot/boot.s
 INT_ASM = interrupts/interrupts.s interrupts/syscall.s
+KERNEL_ASM = kernel/switch.s                    # ← ADD THIS LINE
 INT_C = interrupts/idt.c interrupts/isr.c interrupts/pagefault.c
 DRIVER_C = drivers/terminal.c drivers/keyboard.c drivers/pic.c drivers/timer.c drivers/ata.c
 KERNEL_C = kernel/kernel.c kernel/fpu.c kernel/task.c kernel/scheduler.c kernel/syscall.c
@@ -39,12 +41,10 @@ SHELL_C = shell/shell.c shell/test_tasks.c
 MM_C = mm/pmm.c mm/paging.c mm/heap.c mm/vmm.c
 FS_C = fs/vfs.c fs/ramfs.c fs/tarfs.c fs/fat.c
 
-
-# ============================================================
 # OBJECT FILES
-# ============================================================
 BOOT_OBJ = boot/boot.o
 INT_OBJ = $(INT_ASM:.s=.o) $(INT_C:.c=.o)
+KERNEL_ASM_OBJ = $(KERNEL_ASM:.s=.o)           # ← ADD THIS LINE
 DRIVER_OBJ = $(DRIVER_C:.c=.o)
 KERNEL_OBJ = $(KERNEL_C:.c=.o)
 LIB_OBJ = $(LIB_C:.c=.o)
@@ -53,7 +53,9 @@ SHELL_OBJ = $(SHELL_C:.c=.o)
 MM_OBJ = $(MM_C:.c=.o)
 FS_OBJ = $(FS_C:.c=.o)
 
-OBJS = $(BOOT_OBJ) $(INT_OBJ) $(DRIVER_OBJ) $(KERNEL_OBJ) $(LIB_OBJ) $(AI_OBJ) $(SHELL_OBJ) $(MM_OBJ) $(FS_OBJ)
+# ALL OBJECTS - make sure KERNEL_ASM_OBJ is included!
+OBJS = $(BOOT_OBJ) $(INT_OBJ) $(KERNEL_ASM_OBJ) $(DRIVER_OBJ) $(KERNEL_OBJ) $(LIB_OBJ) $(AI_OBJ) $(SHELL_OBJ) $(MM_OBJ) $(FS_OBJ)
+
 # ============================================================
 # BUILD TARGETS
 # ============================================================
