@@ -168,6 +168,13 @@ void ata_init(void);
 /* Forward declaration for VFS node type */
 struct vfs_node;
 
+/* GDT and TSS */
+void gdt_init(void);
+void tss_init(void);
+
+/* User mode */
+void enter_usermode(uint32_t entry_point, uint32_t user_stack) __attribute__((noreturn));
+
 void vfs_init(void);
 void ramfs_init(void);
 /* After tarfs_init() declaration */

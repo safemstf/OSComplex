@@ -48,6 +48,6 @@ void     sys_yield(void);
 uint32_t sys_getpid(void);
 void     sys_sleep(uint32_t ms);
 int      sys_fork(void);
-int      sys_exec(void *entry);
+int      sys_exec(const char *path);  /* FIXED: changed from void *entry */
 
 #endif /* SYSCALL_H */

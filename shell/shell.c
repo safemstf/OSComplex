@@ -67,6 +67,9 @@ static void cmd_help(void)
     terminal_writestring("  readsector <n> - Read sector at LBA n\n");
     terminal_writestring("  writesector <n> <text> - Write text to sector n\n");
 
+    terminal_writestring("\nUser Mode:\n");
+    terminal_writestring("  usertest    - Test user mode execution\n");
+
     terminal_writestring("\n");
     terminal_setcolor(vga_entry_color(VGA_COLOR_LIGHT_CYAN, VGA_COLOR_BLACK));
     terminal_writestring("💡 AI Tips:\n");
@@ -262,45 +265,48 @@ static void cmd_ps(void)
     terminal_writestring("---  -------  --------------------\n");
 
     task_t *task = kernel_task;
-    if (!task) {
+    if (!task)
+    {
         terminal_writestring("(no tasks)\n\n");
         return;
     }
-    
-    task_t *start = task;  // Remember where we started
-    do {
+
+    task_t *start = task; // Remember where we started
+    do
+    {
         char buf[16];
         itoa(task->pid, buf);
         terminal_writestring(buf);
         terminal_writestring(task->pid < 10 ? "    " : (task->pid < 100 ? "   " : "  "));
 
-        switch (task->state) {
-            case TASK_READY:
-                terminal_writestring("READY  ");
-                break;
-            case TASK_RUNNING:
-                terminal_writestring("RUN    ");
-                break;
-            case TASK_BLOCKED:
-                terminal_writestring("BLOCK  ");
-                break;
-            case TASK_SLEEPING:
-                terminal_writestring("SLEEP  ");
-                break;
-            case TASK_ZOMBIE:
-                terminal_writestring("ZOMBIE ");
-                break;
-            default:
-                terminal_writestring("???    ");
-                break;
+        switch (task->state)
+        {
+        case TASK_READY:
+            terminal_writestring("READY  ");
+            break;
+        case TASK_RUNNING:
+            terminal_writestring("RUN    ");
+            break;
+        case TASK_BLOCKED:
+            terminal_writestring("BLOCK  ");
+            break;
+        case TASK_SLEEPING:
+            terminal_writestring("SLEEP  ");
+            break;
+        case TASK_ZOMBIE:
+            terminal_writestring("ZOMBIE ");
+            break;
+        default:
+            terminal_writestring("???    ");
+            break;
         }
-        
+
         terminal_writestring(" ");
         terminal_writestring(task->name);
         terminal_writestring("\n");
 
         task = task->next;
-    } while (task && task != start);  // ← STOP when we loop back!
+    } while (task && task != start); // ← STOP when we loop back!
 
     terminal_writestring("\n");
 }
@@ -926,6 +932,121 @@ static void cmd_writesector(const char *args)
     kfree(buffer);
 }
 
+
+static void cmd_exec(const char *path)
+{
+    if (!path || !*path) {
+        terminal_writestring("Usage: exec <program>\n");
+        return;
+    }
+    
+    /* Create user task from ELF */
+    int ret = task_exec(path);
+    
+    if (ret < 0) {
+        terminal_setcolor(vga_entry_color(VGA_COLOR_LIGHT_RED, VGA_COLOR_BLACK));
+        terminal_writestring("exec: ");
+        terminal_writestring(path);
+        terminal_writestring(": Not found or invalid ELF\n");
+        terminal_setcolor(vga_entry_color(VGA_COLOR_WHITE, VGA_COLOR_BLACK));
+        return;
+    }
+    
+    terminal_setcolor(vga_entry_color(VGA_COLOR_LIGHT_GREEN, VGA_COLOR_BLACK));
+    terminal_writestring("✓ Started user program: ");
+    terminal_writestring(path);
+    terminal_writestring("\n");
+    terminal_setcolor(vga_entry_color(VGA_COLOR_WHITE, VGA_COLOR_BLACK));
+}
+
+/* Forward declaration of user program entry point */
+extern void user_main(void);
+
+static void cmd_usertest(void)
+{
+    terminal_setcolor(vga_entry_color(VGA_COLOR_LIGHT_CYAN, VGA_COLOR_BLACK));
+    terminal_writestring("\n[USERMODE] Testing Ring 3 system calls...\n\n");
+    terminal_setcolor(vga_entry_color(VGA_COLOR_WHITE, VGA_COLOR_BLACK));
+
+    /* Allocate kernel stack for TSS */
+    void *kernel_stack = kmalloc(4096);
+    if (!kernel_stack) {
+        terminal_writestring("Error: Failed to allocate kernel stack\n");
+        return;
+    }
+    tss_set_kernel_stack((uint32_t)kernel_stack + 4096);
+
+    /* User code at 0x10000000 (256MB - well below kernel at 0xC0000000) */
+    uint32_t user_code_addr = 0x10000000;
+    void *phys_code = pmm_alloc_block();
+    if (!phys_code) {
+        terminal_writestring("Error: Failed to allocate physical page for code\n");
+        kfree(kernel_stack);
+        return;
+    }
+    vmm_map_page(user_code_addr, (uint32_t)phys_code, VMM_PRESENT | VMM_WRITE | VMM_USER);
+
+    /* User stack at 0x20000000 (512MB - different region from code) */
+    uint32_t user_stack_addr = 0x20000000;
+    void *phys_stack = pmm_alloc_block();
+    if (!phys_stack) {
+        terminal_writestring("Error: Failed to allocate physical page for stack\n");
+        vmm_unmap_page(user_code_addr);
+        pmm_free_block(phys_code);
+        kfree(kernel_stack);
+        return;
+    }
+    vmm_map_page(user_stack_addr, (uint32_t)phys_stack, VMM_PRESENT | VMM_WRITE | VMM_USER);
+
+    /* Zero both pages */
+    memset((void *)user_code_addr, 0, PAGE_SIZE);
+    memset((void *)user_stack_addr, 0, PAGE_SIZE);
+
+    /* FIXED: Simple user code without HLT
+     * 
+     * Original had 'hlt' which is ILLEGAL in Ring 3!
+     * This version uses infinite loop after syscall.
+     */
+    static uint8_t user_code[] = {
+        0xB8, 0x00, 0x00, 0x00, 0x00,  /* mov eax, 0 (SYS_EXIT) */
+        0xBB, 0x2A, 0x00, 0x00, 0x00,  /* mov ebx, 42 (exit status) */
+        0xCD, 0x80,                    /* int 0x80 (syscall) */
+        0xEB, 0xFE                     /* jmp $ (infinite loop - NOT hlt!) */
+    };
+
+    memcpy((void *)user_code_addr, user_code, sizeof(user_code));
+
+    terminal_writestring("[DEBUG] Kernel stack: 0x");
+    terminal_write_hex((uint32_t)kernel_stack + 4096);
+    terminal_writestring("\n");
+
+    terminal_writestring("[DEBUG] User code at: 0x");
+    terminal_write_hex(user_code_addr);
+    terminal_writestring("\n");
+
+    terminal_writestring("[DEBUG] User stack at: 0x");
+    terminal_write_hex(user_stack_addr + PAGE_SIZE);
+    terminal_writestring("\n");
+
+    terminal_writestring("[DEBUG] Entering Ring 3...\n\n");
+
+    /* Jump to user mode - stack pointer at TOP of stack page */
+    enter_usermode(user_code_addr, user_stack_addr + PAGE_SIZE);
+
+    /* We're back in kernel mode! */
+    terminal_setcolor(vga_entry_color(VGA_COLOR_LIGHT_GREEN, VGA_COLOR_BLACK));
+    terminal_writestring("\n[USERMODE] ✓ SUCCESS! Returned from Ring 3!\n");
+    terminal_writestring("[USERMODE] ✓ System call interface works!\n\n");
+    terminal_setcolor(vga_entry_color(VGA_COLOR_WHITE, VGA_COLOR_BLACK));
+
+    /* Cleanup */
+    vmm_unmap_page(user_code_addr);
+    vmm_unmap_page(user_stack_addr);
+    pmm_free_block(phys_code);
+    pmm_free_block(phys_stack);
+    kfree(kernel_stack);
+}
+
 static void shell_execute_command(const char *cmd)
 {
     if (!cmd || !*cmd)
@@ -1132,6 +1253,11 @@ static void shell_execute_command(const char *cmd)
     else if (strncmp(cmd, "writesector ", 12) == 0)
     {
         cmd_writesector(args);
+        success = true;
+    }
+    else if (strcmp(cmd, "usertest") == 0)
+    {
+        cmd_usertest();
         success = true;
     }
 

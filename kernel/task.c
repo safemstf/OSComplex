@@ -1,48 +1,48 @@
 /* kernel/task.c - Task Management Implementation
  * 
  * Implements process creation, destruction, and context switching.
- * This is the core of our multitasking OS!
+ * CLEANED: Removed duplicate code, organized clearly
  */
 
 #include "task.h"
 #include "kernel.h"
+#include "elf.h"
 #include "../mm/vmm.h"
 #include "../mm/pmm.h"
 #include "scheduler.h"
 
 /* ================================================================
+ * USER MODE MEMORY LAYOUT
+ * ================================================================ */
+#define USER_CODE_BASE   0x08048000  /* Standard Linux .text address */
+#define USER_STACK_TOP   0xC0000000  /* Just below kernel (3GB) */
+#define USER_STACK_SIZE  0x00100000  /* 1MB stack */
+#define USER_HEAP_START  0x10000000  /* Heap starts at 256MB */
+
+/* ================================================================
  * GLOBAL STATE
  * ================================================================ */
-
-/* Current running task */
 task_t *current_task = NULL;
-
-/* Next PID to assign */
 static uint32_t next_pid = 1;
-
-/* Kernel idle task (runs when nothing else can) */
 task_t *kernel_task = NULL;
-
-/* Task list head (all tasks) */
 static task_t *task_list_head = NULL;
 
 /* ================================================================
  * FORWARD DECLARATIONS
  * ================================================================ */
 static void idle_task_entry(void);
-static void task_setup_stack(task_t *task, void (*entry_point)(void));
+static void task_setup_kernel_stack(task_t *task, void (*entry_point)(void));
+static void task_setup_user_context(task_t *task);
 extern void task_switch_asm(task_t *old_task, task_t *new_task);
 
 /* ================================================================
  * INITIALIZATION
  * ================================================================ */
-
 void task_init(void)
 {
     terminal_setcolor(vga_entry_color(VGA_COLOR_LIGHT_CYAN, VGA_COLOR_BLACK));
     terminal_writestring("[TASK] Initializing task management...\n");
     
-    /* Create kernel idle task */
     kernel_task = kmalloc(sizeof(task_t));
     if (!kernel_task) {
         terminal_setcolor(vga_entry_color(VGA_COLOR_LIGHT_RED, VGA_COLOR_BLACK));
@@ -55,12 +55,12 @@ void task_init(void)
     kernel_task->pid = 0;
     strcpy(kernel_task->name, "kernel_idle");
     kernel_task->state = TASK_RUNNING;
-    kernel_task->priority = 255;  /* Lowest priority */
+    kernel_task->priority = 255;
+    kernel_task->ring = 0;  /* Kernel mode */
     kernel_task->page_directory = vmm_current_as->page_dir;
     kernel_task->parent = NULL;
     kernel_task->next = NULL;
     
-    /* Kernel task is currently running */
     current_task = kernel_task;
     task_list_head = kernel_task;
     
@@ -70,12 +70,10 @@ void task_init(void)
 }
 
 /* ================================================================
- * TASK CREATION
+ * KERNEL TASK CREATION
  * ================================================================ */
-
 task_t* task_create(const char *name, void (*entry_point)(void), uint32_t priority)
 {
-    /* Allocate task structure */
     task_t *task = kmalloc(sizeof(task_t));
     if (!task) {
         terminal_writestring("[TASK] ERROR: Failed to allocate task structure\n");
@@ -84,17 +82,18 @@ task_t* task_create(const char *name, void (*entry_point)(void), uint32_t priori
     
     memset(task, 0, sizeof(task_t));
     
-    /* Set task properties */
+    /* Basic properties */
     task->pid = next_pid++;
     strncpy(task->name, name, 31);
     task->name[31] = '\0';
     task->state = TASK_READY;
     task->priority = priority;
-    task->time_slice = 10;  /* 10ms default */
+    task->ring = 0;  /* Kernel mode */
+    task->time_slice = 10;
     task->total_time = 0;
     task->exit_code = 0;
     
-    /* Allocate kernel stack (4KB) */
+    /* Allocate kernel stack */
     task->kernel_stack = (uint32_t)kmalloc(4096);
     if (!task->kernel_stack) {
         terminal_writestring("[TASK] ERROR: Failed to allocate kernel stack\n");
@@ -102,7 +101,7 @@ task_t* task_create(const char *name, void (*entry_point)(void), uint32_t priori
         return NULL;
     }
     
-    /* Allocate user stack (4KB) */
+    /* Allocate user stack */
     task->user_stack = (uint32_t)kmalloc(4096);
     if (!task->user_stack) {
         terminal_writestring("[TASK] ERROR: Failed to allocate user stack\n");
@@ -111,13 +110,13 @@ task_t* task_create(const char *name, void (*entry_point)(void), uint32_t priori
         return NULL;
     }
     
-    /* Use kernel address space for now (no user space yet) */
+    /* Use kernel address space */
     task->page_directory = kernel_task->page_directory;
     
-    /* Setup initial stack and context */
-    task_setup_stack(task, entry_point);
+    /* Setup initial stack */
+    task_setup_kernel_stack(task, entry_point);
     
-    /* Set parent to current task */
+    /* Set parent */
     task->parent = current_task;
     
     /* Add to task list */
@@ -139,13 +138,94 @@ task_t* task_create(const char *name, void (*entry_point)(void), uint32_t priori
 }
 
 /* ================================================================
- * STACK SETUP
- * Setup initial stack so task can start executing
+ * USER TASK CREATION (Phase 4)
  * ================================================================ */
-
-static void task_setup_stack(task_t *task, void (*entry_point)(void))
+task_t* task_create_user(const char *name, void *elf_data, uint32_t priority)
 {
-    /* Stack grows downward, so start at top */
+    task_t *task = kmalloc(sizeof(task_t));
+    if (!task) return NULL;
+    
+    memset(task, 0, sizeof(task_t));
+    
+    /* Basic properties */
+    task->pid = next_pid++;
+    strncpy(task->name, name, 31);
+    task->name[31] = '\0';
+    task->state = TASK_READY;
+    task->priority = priority;
+    task->ring = 3;  /* USER MODE! */
+    task->time_slice = 10;
+    
+    /* Create NEW page directory for this process */
+    struct vmm_address_space *as = vmm_create_as();
+    if (!as) {
+        kfree(task);
+        return NULL;
+    }
+    task->page_directory = as->page_dir;
+    
+    /* Allocate kernel stack (for syscalls) */
+    task->kernel_stack = (uint32_t)kmalloc(4096);
+    if (!task->kernel_stack) {
+        vmm_destroy_as(as);
+        kfree(task);
+        return NULL;
+    }
+    
+    /* Allocate user stack in user space */
+    uint32_t stack_phys = (uint32_t)pmm_alloc_block();
+    if (!stack_phys) {
+        kfree((void*)task->kernel_stack);
+        vmm_destroy_as(as);
+        kfree(task);
+        return NULL;
+    }
+    
+    /* Map user stack */
+    vmm_map_page(USER_STACK_TOP - PAGE_SIZE, stack_phys, 
+                 VMM_PRESENT | VMM_WRITE | VMM_USER);
+    
+    task->user_esp = USER_STACK_TOP;
+    task->stack_bottom = USER_STACK_TOP - USER_STACK_SIZE;
+    
+    /* Load ELF binary */
+    if (!elf_load(task, elf_data)) {
+        vmm_unmap_page(USER_STACK_TOP - PAGE_SIZE);
+        pmm_free_block((void*)stack_phys);
+        kfree((void*)task->kernel_stack);
+        vmm_destroy_as(as);
+        kfree(task);
+        return NULL;
+    }
+    
+    /* Setup context for first run */
+    task_setup_user_context(task);
+    
+    /* Set parent */
+    task->parent = current_task;
+    
+    /* Add to task list */
+    task->next = task_list_head;
+    task_list_head = task;
+    
+    terminal_setcolor(vga_entry_color(VGA_COLOR_LIGHT_GREEN, VGA_COLOR_BLACK));
+    terminal_writestring("[TASK] Created user task '");
+    terminal_writestring(task->name);
+    terminal_writestring("' (PID ");
+    char buf[16];
+    itoa(task->pid, buf);
+    terminal_writestring(buf);
+    terminal_writestring(")\n");
+    terminal_setcolor(vga_entry_color(VGA_COLOR_WHITE, VGA_COLOR_BLACK));
+    
+    return task;
+}
+
+/* ================================================================
+ * STACK SETUP - KERNEL MODE
+ * ================================================================ */
+static void task_setup_kernel_stack(task_t *task, void (*entry_point)(void))
+{
     uint32_t *stack = (uint32_t*)(task->kernel_stack + 4096);
     
     /* Push initial values (will be popped by task_switch_asm) */
@@ -161,15 +241,46 @@ static void task_setup_stack(task_t *task, void (*entry_point)(void))
     *(--stack) = 0;                       /* ESI */
     *(--stack) = 0;                       /* EDI */
     
-    /* Save stack pointer */
     task->context.esp = (uint32_t)stack;
     task->context.eip = (uint32_t)entry_point;
 }
 
 /* ================================================================
- * TASK SWITCHING (assembly stub will be created separately)
+ * STACK SETUP - USER MODE
  * ================================================================ */
+void task_setup_user_context(task_t *task)
+{
+    uint32_t *kstack = (uint32_t*)(task->kernel_stack + 4096);
+    
+    /* Build iret frame on kernel stack for returning to user mode */
+    *(--kstack) = 0x23;                    /* SS (user data segment) */
+    *(--kstack) = task->user_esp;          /* ESP (user stack) */
+    *(--kstack) = 0x202;                   /* EFLAGS (IF=1) */
+    *(--kstack) = 0x1B;                    /* CS (user code segment) */
+    *(--kstack) = task->code_start;        /* EIP (entry point) */
+    
+    /* General purpose registers (will be popped by popa) */
+    *(--kstack) = 0;  /* EAX */
+    *(--kstack) = 0;  /* ECX */
+    *(--kstack) = 0;  /* EDX */
+    *(--kstack) = 0;  /* EBX */
+    *(--kstack) = 0;  /* ESP (ignored) */
+    *(--kstack) = 0;  /* EBP */
+    *(--kstack) = 0;  /* ESI */
+    *(--kstack) = 0;  /* EDI */
+    
+    /* Segment registers */
+    *(--kstack) = 0x23;  /* DS */
+    *(--kstack) = 0x23;  /* ES */
+    *(--kstack) = 0x23;  /* FS */
+    *(--kstack) = 0x23;  /* GS */
+    
+    task->context.esp = (uint32_t)kstack;
+}
 
+/* ================================================================
+ * TASK SWITCHING
+ * ================================================================ */
 void task_switch(task_t *new_task)
 {
     if (!new_task || new_task == current_task) {
@@ -194,7 +305,6 @@ void task_switch(task_t *new_task)
 /* ================================================================
  * TASK QUERIES
  * ================================================================ */
-
 task_t* task_current(void)
 {
     return current_task;
@@ -203,7 +313,6 @@ task_t* task_current(void)
 /* ================================================================
  * TASK LIFECYCLE
  * ================================================================ */
-
 void task_exit(int exit_code)
 {
     if (!current_task || current_task == kernel_task) {
@@ -223,7 +332,6 @@ void task_exit(int exit_code)
     terminal_writestring("\n");
     terminal_setcolor(vga_entry_color(VGA_COLOR_WHITE, VGA_COLOR_BLACK));
     
-    /* Yield to pick next task */
     task_yield();
     
     while(1) __asm__ volatile("hlt");
@@ -231,7 +339,6 @@ void task_exit(int exit_code)
 
 void task_yield(void)
 {
-    /* Will be hooked to scheduler */
     __asm__ volatile("hlt");
 }
 
@@ -291,7 +398,6 @@ void task_destroy(task_t *task)
 /* ================================================================
  * IDLE TASK
  * ================================================================ */
-
 static void idle_task_entry(void)
 {
     while (1) {

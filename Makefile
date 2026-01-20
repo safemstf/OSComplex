@@ -1,4 +1,4 @@
-# Makefile for OSComplex - AI-Native Operating System
+# Makefile for OSComplex - CLEANED AND ORGANIZED
 
 # ============================================================
 # TOOLCHAIN CONFIGURATION
@@ -16,35 +16,34 @@ CFLAGS = -std=gnu99 -ffreestanding -O2 -Wall -Wextra -Ikernel
 # ============================================================
 # LINKER FLAGS
 # ============================================================
-# -n = don't page-align data, keeps sections contiguous
-# -T = use our linker script
 LDFLAGS = -n -T linker.ld -nostdlib
 
 # ============================================================
 # OUTPUT FILES
 # ============================================================
-KERNEL = OSComplex.bin
+KERNEL = oscomplex.bin
 
 # ============================================================
 # SOURCE FILES (organized by directory)
 # ============================================================
-# SOURCE FILES
 BOOT_ASM = boot/boot.s
 INT_ASM = interrupts/interrupts.s interrupts/syscall.s
-KERNEL_ASM = kernel/switch.s                    # ← ADD THIS LINE
+KERNEL_ASM = kernel/switch.s kernel/gdt_flush.s kernel/tss_flush.s kernel/usermode.s
 INT_C = interrupts/idt.c interrupts/isr.c interrupts/pagefault.c
 DRIVER_C = drivers/terminal.c drivers/keyboard.c drivers/pic.c drivers/timer.c drivers/ata.c
-KERNEL_C = kernel/kernel.c kernel/fpu.c kernel/task.c kernel/scheduler.c kernel/syscall.c
+KERNEL_C = kernel/kernel.c kernel/fpu.c kernel/task.c kernel/scheduler.c kernel/syscall.c kernel/gdt.c kernel/tss.c kernel/elf.c
 LIB_C = lib/string.c
 AI_C = ai/ai.c
 SHELL_C = shell/shell.c shell/test_tasks.c
 MM_C = mm/pmm.c mm/paging.c mm/heap.c mm/vmm.c
 FS_C = fs/vfs.c fs/ramfs.c fs/tarfs.c fs/fat.c
 
+# ============================================================
 # OBJECT FILES
+# ============================================================
 BOOT_OBJ = boot/boot.o
 INT_OBJ = $(INT_ASM:.s=.o) $(INT_C:.c=.o)
-KERNEL_ASM_OBJ = $(KERNEL_ASM:.s=.o)           # ← ADD THIS LINE
+KERNEL_ASM_OBJ = $(KERNEL_ASM:.s=.o)
 DRIVER_OBJ = $(DRIVER_C:.c=.o)
 KERNEL_OBJ = $(KERNEL_C:.c=.o)
 LIB_OBJ = $(LIB_C:.c=.o)
@@ -53,7 +52,6 @@ SHELL_OBJ = $(SHELL_C:.c=.o)
 MM_OBJ = $(MM_C:.c=.o)
 FS_OBJ = $(FS_C:.c=.o)
 
-# ALL OBJECTS - make sure KERNEL_ASM_OBJ is included!
 OBJS = $(BOOT_OBJ) $(INT_OBJ) $(KERNEL_ASM_OBJ) $(DRIVER_OBJ) $(KERNEL_OBJ) $(LIB_OBJ) $(AI_OBJ) $(SHELL_OBJ) $(MM_OBJ) $(FS_OBJ)
 
 # ============================================================
@@ -64,7 +62,7 @@ OBJS = $(BOOT_OBJ) $(INT_OBJ) $(KERNEL_ASM_OBJ) $(DRIVER_OBJ) $(KERNEL_OBJ) $(LI
 all: $(KERNEL)
 	@echo ""
 	@echo "╔════════════════════════════════════════╗"
-	@echo "║   OSComplex Build Complete! 🚀     ║"
+	@echo "║   OSComplex Build Complete! 🚀         ║"
 	@echo "╚════════════════════════════════════════╝"
 	@echo ""
 	@echo "Run with: make run"
@@ -101,13 +99,13 @@ $(KERNEL): $(KERNEL).elf
 run: $(KERNEL)
 	@echo ""
 	@echo "╔════════════════════════════════════════╗"
-	@echo "║     Launching OSComplex! 🚀        ║"
+	@echo "║     Launching OSComplex! 🚀            ║"
 	@echo "╚════════════════════════════════════════╝"
 	@echo ""
 	@echo "Press Ctrl+Alt+G to release mouse"
 	@echo "Press Ctrl+C to exit"
 	@echo ""
-	qemu-system-i386 -kernel $(KERNEL).elf -m 32M -hda disk.img
+	qemu-system-i386 -kernel $(KERNEL).elf -m 32M
 
 debug: $(KERNEL)
 	@echo ""
@@ -135,10 +133,14 @@ info:
 	@echo "Source files:"
 	@echo "  Boot: $(BOOT_ASM)"
 	@echo "  Interrupts: $(INT_ASM) $(INT_C)"
+	@echo "  Kernel ASM: $(KERNEL_ASM)"
 	@echo "  Drivers: $(DRIVER_C)"
 	@echo "  Kernel: $(KERNEL_C)"
 	@echo "  Libraries: $(LIB_C)"
 	@echo "  AI: $(AI_C)"
 	@echo "  Shell: $(SHELL_C)"
+	@echo "  Memory: $(MM_C)"
+	@echo "  Filesystem: $(FS_C)"
 	@echo ""
 	@echo "Output: $(KERNEL)"
+	

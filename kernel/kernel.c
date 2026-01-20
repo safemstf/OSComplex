@@ -125,6 +125,15 @@ void kernel_main(void)
     terminal_writestring("[KERNEL] Interrupts enabled - system ready!\n\n");
 
     /* =========================================================
+    * Step 9.5: User Mode Support
+    * MUST come before task init!
+    * ========================================================= */
+    terminal_writestring("[KERNEL] Setting up user mode support...\n");
+    gdt_init();
+    tss_init();
+    terminal_writestring("[KERNEL] User mode ready\n\n");
+
+    /* =========================================================
      * Step 10: Task Management & Scheduler
      * MUST come after heap is initialized!
      * ========================================================= */

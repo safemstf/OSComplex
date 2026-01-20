@@ -5,7 +5,7 @@
  * - Task states and priorities
  * - CPU register context
  * 
- * This is the foundation for running multiple programs!
+ * UPDATED: Added user mode support for Phase 4
  */
 
 #ifndef TASK_H
@@ -77,7 +77,19 @@ typedef struct task {
     uint32_t kernel_stack;       /* Kernel mode stack */
     uint32_t user_stack;         /* User mode stack */
     
-
+    /* USER MODE SUPPORT (Phase 4) */
+    uint8_t ring;                /* 0 = kernel task, 3 = user task */
+    uint32_t user_esp;           /* Ring 3 stack pointer */
+    
+    /* User memory layout */
+    uint32_t code_start;         /* Code segment start */
+    uint32_t code_end;           /* Code segment end */
+    uint32_t data_start;         /* Data segment start */
+    uint32_t data_end;           /* Data segment end */
+    uint32_t heap_start;         /* Heap start */
+    uint32_t heap_end;           /* Heap end */
+    uint32_t stack_bottom;       /* User stack bottom */
+    
     /* Scheduling */
     uint32_t time_slice;         /* Remaining time quantum (ticks) */
     uint32_t total_time;         /* Total CPU time used */
@@ -98,8 +110,13 @@ typedef struct task {
 /* Initialize task subsystem */
 void task_init(void);
 
-/* Create a new task */
+/* Create a new kernel task */
 task_t* task_create(const char *name, void (*entry_point)(void), uint32_t priority);
+
+/* Create a new user mode task from ELF binary */
+task_t* task_create_user(const char *name, void *elf_data, uint32_t priority);
+
+void task_setup_user_context(task_t *task);
 
 /* Destroy a task */
 void task_destroy(task_t *task);
