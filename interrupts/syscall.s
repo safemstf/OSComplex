@@ -1,13 +1,18 @@
-/* kernel/syscall_stub.s - System Call Entry Point
+/* kernel/syscall.s - System Call Entry Point
  * 
- * This MUST match struct registers layout exactly:
+ * CRITICAL FIX: This MUST match struct registers layout EXACTLY:
  * 
  * struct registers {
- *     uint32_t ds;
- *     uint32_t edi, esi, ebp, esp, ebx, edx, ecx, eax;
- *     uint32_t int_no, err_code;
- *     uint32_t eip, cs, eflags, useresp, ss;
+ *     uint32_t ds;                                       ← Push FIRST
+ *     uint32_t edi, esi, ebp, esp, ebx, edx, ecx, eax;  ← pusha order
+ *     uint32_t int_no, err_code;                        ← Push BEFORE pusha
+ *     uint32_t eip, cs, eflags, useresp, ss;            ← CPU already pushed
  * } __attribute__((packed));
+ * 
+ * CPU state when INT 0x80 fires:
+ * [SS] [ESP] [EFLAGS] [CS] [EIP] ← CPU pushed (bottom of stack)
+ * 
+ * We need to build the rest to match struct registers
  */
 
 .section .text
@@ -17,37 +22,32 @@
 syscall_stub:
     cli
     
-    /* CRITICAL: INT 0x80 doesn't push error code!
-     * Push fake error code to match struct registers */
+    /* INT 0x80 doesn't push error code, so we fake it */
     push $0                     /* err_code (fake) */
     push $0x80                  /* int_no */
     
-    /* Save general purpose registers (matches pusha order) */
+    /* Save general purpose registers */
     pusha                       /* Pushes: EAX, ECX, EDX, EBX, ESP, EBP, ESI, EDI */
     
-    /* Save data segment */
-    push %ds
+    /* Save segment register */
+    push %ds                    /* Now DS is at the TOP (matches struct!) */
     
-    /* Load kernel data segment */
+    /* Load kernel segments */
     mov $0x10, %ax
     mov %ax, %ds
     mov %ax, %es
     mov %ax, %fs
     mov %ax, %gs
     
-    /* Call C handler - pass pointer to struct registers */
+    /* Call C handler - ESP points to complete struct registers */
     push %esp
     call syscall_handler
     add $4, %esp
     
-    /* Restore data segment */
-    pop %ds
-    
-    /* Restore general purpose registers */
-    popa
-    
-    /* Remove int_no and err_code */
-    add $8, %esp
+    /* Restore in REVERSE order */
+    pop %ds                     /* Restore DS first */
+    popa                        /* Restore general purpose registers */
+    add $8, %esp                /* Remove int_no and err_code */
     
     /* Return to user mode */
     sti

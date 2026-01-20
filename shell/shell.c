@@ -958,6 +958,9 @@ static void cmd_exec(const char *path)
     terminal_writestring("\n");
     terminal_setcolor(vga_entry_color(VGA_COLOR_WHITE, VGA_COLOR_BLACK));
 }
+/* Enhanced usertest command with debug output
+ * Add this to your shell.c, replacing the existing cmd_usertest
+ */
 
 /* Forward declaration of user program entry point */
 extern void user_main(void);
@@ -971,72 +974,124 @@ static void cmd_usertest(void)
     /* Allocate kernel stack for TSS */
     void *kernel_stack = kmalloc(4096);
     if (!kernel_stack) {
-        terminal_writestring("Error: Failed to allocate kernel stack\n");
+        terminal_writestring("[ERROR] Failed to allocate kernel stack\n");
         return;
     }
-    tss_set_kernel_stack((uint32_t)kernel_stack + 4096);
+    
+    terminal_writestring("[DEBUG] Kernel stack allocated at: 0x");
+    terminal_write_hex((uint32_t)kernel_stack);
+    terminal_writestring("\n");
+    
+    uint32_t esp0 = (uint32_t)kernel_stack + 4096;
+    terminal_writestring("[DEBUG] Setting TSS.ESP0 to: 0x");
+    terminal_write_hex(esp0);
+    terminal_writestring("\n");
+    
+    tss_set_kernel_stack(esp0);
 
     /* User code at 0x10000000 (256MB - well below kernel at 0xC0000000) */
     uint32_t user_code_addr = 0x10000000;
     void *phys_code = pmm_alloc_block();
     if (!phys_code) {
-        terminal_writestring("Error: Failed to allocate physical page for code\n");
+        terminal_writestring("[ERROR] Failed to allocate physical page for code\n");
         kfree(kernel_stack);
         return;
     }
+    
+    terminal_writestring("[DEBUG] Physical page for code: 0x");
+    terminal_write_hex((uint32_t)phys_code);
+    terminal_writestring("\n");
+    
     vmm_map_page(user_code_addr, (uint32_t)phys_code, VMM_PRESENT | VMM_WRITE | VMM_USER);
+    
+    terminal_writestring("[DEBUG] Mapped code page: virt 0x");
+    terminal_write_hex(user_code_addr);
+    terminal_writestring(" -> phys 0x");
+    terminal_write_hex((uint32_t)phys_code);
+    terminal_writestring("\n");
 
     /* User stack at 0x20000000 (512MB - different region from code) */
     uint32_t user_stack_addr = 0x20000000;
     void *phys_stack = pmm_alloc_block();
     if (!phys_stack) {
-        terminal_writestring("Error: Failed to allocate physical page for stack\n");
+        terminal_writestring("[ERROR] Failed to allocate physical page for stack\n");
         vmm_unmap_page(user_code_addr);
         pmm_free_block(phys_code);
         kfree(kernel_stack);
         return;
     }
+    
+    terminal_writestring("[DEBUG] Physical page for stack: 0x");
+    terminal_write_hex((uint32_t)phys_stack);
+    terminal_writestring("\n");
+    
     vmm_map_page(user_stack_addr, (uint32_t)phys_stack, VMM_PRESENT | VMM_WRITE | VMM_USER);
+    
+    terminal_writestring("[DEBUG] Mapped stack page: virt 0x");
+    terminal_write_hex(user_stack_addr);
+    terminal_writestring(" -> phys 0x");
+    terminal_write_hex((uint32_t)phys_stack);
+    terminal_writestring("\n");
 
     /* Zero both pages */
     memset((void *)user_code_addr, 0, PAGE_SIZE);
     memset((void *)user_stack_addr, 0, PAGE_SIZE);
 
-    /* FIXED: Simple user code without HLT
+    /* User code: syscall then infinite loop (NOT hlt!)
      * 
-     * Original had 'hlt' which is ILLEGAL in Ring 3!
-     * This version uses infinite loop after syscall.
+     * This code does:
+     *   mov eax, 0      ; SYS_EXIT
+     *   mov ebx, 42     ; exit code
+     *   int 0x80        ; syscall
+     *   jmp $           ; infinite loop (NOT hlt - that's privileged!)
      */
     static uint8_t user_code[] = {
-        0xB8, 0x00, 0x00, 0x00, 0x00,  /* mov eax, 0 (SYS_EXIT) */
-        0xBB, 0x2A, 0x00, 0x00, 0x00,  /* mov ebx, 42 (exit status) */
-        0xCD, 0x80,                    /* int 0x80 (syscall) */
-        0xEB, 0xFE                     /* jmp $ (infinite loop - NOT hlt!) */
+        0xB8, 0x00, 0x00, 0x00, 0x00,  /* mov eax, 0 */
+        0xBB, 0x2A, 0x00, 0x00, 0x00,  /* mov ebx, 42 */
+        0xCD, 0x80,                    /* int 0x80 */
+        0xEB, 0xFE                     /* jmp $ */
     };
 
     memcpy((void *)user_code_addr, user_code, sizeof(user_code));
+    
+    terminal_writestring("[DEBUG] Copied ");
+    terminal_write_dec(sizeof(user_code));
+    terminal_writestring(" bytes of user code\n");
 
-    terminal_writestring("[DEBUG] Kernel stack: 0x");
-    terminal_write_hex((uint32_t)kernel_stack + 4096);
-    terminal_writestring("\n");
-
-    terminal_writestring("[DEBUG] User code at: 0x");
+    terminal_writestring("[DEBUG] User code entry point: 0x");
     terminal_write_hex(user_code_addr);
     terminal_writestring("\n");
 
-    terminal_writestring("[DEBUG] User stack at: 0x");
+    terminal_writestring("[DEBUG] User stack pointer: 0x");
     terminal_write_hex(user_stack_addr + PAGE_SIZE);
     terminal_writestring("\n");
 
-    terminal_writestring("[DEBUG] Entering Ring 3...\n\n");
+    terminal_writestring("\n[DEBUG] Verifying page mappings...\n");
+    if (!vmm_is_mapped(user_code_addr)) {
+        terminal_writestring("[ERROR] Code page not mapped!\n");
+        return;
+    }
+    terminal_writestring("[DEBUG] ✓ Code page is mapped\n");
+    
+    if (!vmm_is_mapped(user_stack_addr)) {
+        terminal_writestring("[ERROR] Stack page not mapped!\n");
+        return;
+    }
+    terminal_writestring("[DEBUG] ✓ Stack page is mapped\n");
+
+    terminal_setcolor(vga_entry_color(VGA_COLOR_LIGHT_GREEN, VGA_COLOR_BLACK));
+    terminal_writestring("\n[DEBUG] Everything ready! Entering Ring 3...\n\n");
+    terminal_setcolor(vga_entry_color(VGA_COLOR_WHITE, VGA_COLOR_BLACK));
 
     /* Jump to user mode - stack pointer at TOP of stack page */
     enter_usermode(user_code_addr, user_stack_addr + PAGE_SIZE);
 
-    /* We're back in kernel mode! */
+    /* If we get here, we returned from user mode! */
     terminal_setcolor(vga_entry_color(VGA_COLOR_LIGHT_GREEN, VGA_COLOR_BLACK));
-    terminal_writestring("\n[USERMODE] ✓ SUCCESS! Returned from Ring 3!\n");
-    terminal_writestring("[USERMODE] ✓ System call interface works!\n\n");
+    terminal_writestring("\n╔══════════════════════════════════════════════════════════╗\n");
+    terminal_writestring("║          SUCCESS! RETURNED FROM RING 3!                  ║\n");
+    terminal_writestring("║      System call interface is working!                   ║\n");
+    terminal_writestring("╚══════════════════════════════════════════════════════════╝\n\n");
     terminal_setcolor(vga_entry_color(VGA_COLOR_WHITE, VGA_COLOR_BLACK));
 
     /* Cleanup */

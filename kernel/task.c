@@ -2,6 +2,7 @@
  * 
  * Implements process creation, destruction, and context switching.
  * CLEANED: Removed duplicate code, organized clearly
+ * FIXED: Removed macro conflicts and static declaration issues
  */
 
 #include "task.h"
@@ -15,8 +16,8 @@
  * USER MODE MEMORY LAYOUT
  * ================================================================ */
 #define USER_CODE_BASE   0x08048000  /* Standard Linux .text address */
-#define USER_STACK_TOP   0xC0000000  /* Just below kernel (3GB) */
-#define USER_STACK_SIZE  0x00100000  /* 1MB stack */
+/* USER_STACK_TOP is defined in vmm.h as 0xBFFFFFFF */
+/* USER_STACK_SIZE is defined in vmm.h as 0x00100000 */
 #define USER_HEAP_START  0x10000000  /* Heap starts at 256MB */
 
 /* ================================================================
@@ -30,9 +31,7 @@ static task_t *task_list_head = NULL;
 /* ================================================================
  * FORWARD DECLARATIONS
  * ================================================================ */
-static void idle_task_entry(void);
 static void task_setup_kernel_stack(task_t *task, void (*entry_point)(void));
-static void task_setup_user_context(task_t *task);
 extern void task_switch_asm(task_t *old_task, task_t *new_task);
 
 /* ================================================================
@@ -393,14 +392,4 @@ void task_destroy(task_t *task)
     if (task->kernel_stack) kfree((void*)task->kernel_stack);
     if (task->user_stack) kfree((void*)task->user_stack);
     kfree(task);
-}
-
-/* ================================================================
- * IDLE TASK
- * ================================================================ */
-static void idle_task_entry(void)
-{
-    while (1) {
-        __asm__ volatile("hlt");
-    }
 }

@@ -133,6 +133,17 @@ int sys_exec(const char *path)
 
 void syscall_handler(struct registers *regs)
 {
+
+    /* IMMEDIATE debug output */
+    terminal_setcolor(vga_entry_color(VGA_COLOR_LIGHT_RED, VGA_COLOR_BLACK));
+    terminal_writestring("\n\n!!! SYSCALL TRIGGERED !!!\n");
+    terminal_writestring("EAX=");
+    terminal_write_hex(regs->eax);
+    terminal_writestring(" EBX=");
+    terminal_write_hex(regs->ebx);
+    terminal_writestring("\n\n");
+    terminal_setcolor(vga_entry_color(VGA_COLOR_WHITE, VGA_COLOR_BLACK));
+    
     uint32_t syscall_num = regs->eax;
     
     /* Bounds check */

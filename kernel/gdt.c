@@ -1,6 +1,8 @@
 /* kernel/gdt.c - Global Descriptor Table and TSS for User Mode
  * 
  * Sets up proper segmentation for Ring 0 (kernel) and Ring 3 (user)
+ * 
+ * FIXED: TSS selector must be 0x28, NOT 0x2B!
  */
 
 #include "kernel.h"
@@ -93,8 +95,18 @@ void gdt_init(void) {
         : : : "eax"
     );
     
-    /* Load TSS */
-    __asm__ volatile("ltr %%ax" : : "a"(0x2B));  /* 0x28 | 3 (RPL=3) */
+    /* Load TSS - CRITICAL FIX: Use 0x28, NOT 0x2B!
+     * 
+     * TSS selector MUST be Ring 0 (no RPL bits).
+     * The TSS is a kernel structure used for privilege transitions.
+     * 
+     * 0x28 = GDT index 5, RPL=0 ✓
+     * 0x2B = GDT index 5, RPL=3 ✗ WRONG!
+     */
+    __asm__ volatile("ltr %%ax" : : "a"(0x28));
+    
+    terminal_writestring("[GDT] Global Descriptor Table initialized\n");
+    terminal_writestring("[GDT] TSS loaded at selector 0x28\n");
 }
 
 /* Install TSS descriptor into the GDT

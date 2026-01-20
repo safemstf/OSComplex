@@ -105,7 +105,7 @@ run: $(KERNEL)
 	@echo "Press Ctrl+Alt+G to release mouse"
 	@echo "Press Ctrl+C to exit"
 	@echo ""
-	qemu-system-i386 -kernel $(KERNEL).elf -m 32M
+	qemu-system-i386 -kernel $(KERNEL).elf -m 32M -drive file=disk.img
 
 debug: $(KERNEL)
 	@echo ""
