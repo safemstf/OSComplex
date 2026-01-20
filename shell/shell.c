@@ -932,37 +932,83 @@ static void cmd_writesector(const char *args)
     kfree(buffer);
 }
 
-
-static void cmd_exec(const char *path)
+static void cmd_exec(const char *args)
 {
-    if (!path || !*path) {
+    if (!args || !*args)
+    {
         terminal_writestring("Usage: exec <program>\n");
+        terminal_writestring("Example: exec /bin/hello\n");
         return;
     }
-    
-    /* Create user task from ELF */
-    int ret = task_exec(path);
-    
-    if (ret < 0) {
+
+    /* Skip leading spaces */
+    while (*args == ' ')
+        args++;
+
+    terminal_setcolor(vga_entry_color(VGA_COLOR_LIGHT_CYAN, VGA_COLOR_BLACK));
+    terminal_writestring("\n[EXEC] Loading program: ");
+    terminal_writestring(args);
+    terminal_writestring("\n");
+    terminal_setcolor(vga_entry_color(VGA_COLOR_WHITE, VGA_COLOR_BLACK));
+
+    /* Open the file */
+    int fd = vfs_open(args, O_RDONLY);
+    if (fd < 0)
+    {
         terminal_setcolor(vga_entry_color(VGA_COLOR_LIGHT_RED, VGA_COLOR_BLACK));
-        terminal_writestring("exec: ");
-        terminal_writestring(path);
-        terminal_writestring(": Not found or invalid ELF\n");
+        terminal_writestring("[EXEC] ERROR: File not found\n");
         terminal_setcolor(vga_entry_color(VGA_COLOR_WHITE, VGA_COLOR_BLACK));
         return;
     }
-    
+
+    /* Allocate buffer for ELF file (max 64KB) */
+    void *elf_data = kmalloc(65536);
+    if (!elf_data)
+    {
+        terminal_writestring("[EXEC] ERROR: Out of memory\n");
+        vfs_close(fd);
+        return;
+    }
+
+    /* Read the entire file */
+    int bytes_read = vfs_read(fd, elf_data, 65536);
+    vfs_close(fd);
+
+    if (bytes_read <= 0)
+    {
+        terminal_writestring("[EXEC] ERROR: Failed to read file\n");
+        kfree(elf_data);
+        return;
+    }
+
+    terminal_writestring("[EXEC] Read ");
+    terminal_write_dec(bytes_read);
+    terminal_writestring(" bytes\n");
+
+    /* Create user task */
+    task_t *user_task = task_create_user("user_program", elf_data, 10);
+
+    kfree(elf_data);
+
+    if (!user_task)
+    {
+        terminal_setcolor(vga_entry_color(VGA_COLOR_LIGHT_RED, VGA_COLOR_BLACK));
+        terminal_writestring("[EXEC] ERROR: Failed to create task\n");
+        terminal_setcolor(vga_entry_color(VGA_COLOR_WHITE, VGA_COLOR_BLACK));
+        return;
+    }
+
     terminal_setcolor(vga_entry_color(VGA_COLOR_LIGHT_GREEN, VGA_COLOR_BLACK));
-    terminal_writestring("✓ Started user program: ");
-    terminal_writestring(path);
+    terminal_writestring("[EXEC] ✓ Program loaded successfully\n");
+    terminal_writestring("[EXEC] Task PID: ");
+    terminal_write_dec(user_task->pid);
     terminal_writestring("\n");
     terminal_setcolor(vga_entry_color(VGA_COLOR_WHITE, VGA_COLOR_BLACK));
-}
-/* Enhanced usertest command with debug output
- * Add this to your shell.c, replacing the existing cmd_usertest
- */
 
-/* Forward declaration of user program entry point */
+    /* The scheduler will run it on the next tick! */
+    terminal_writestring("[EXEC] Program will start running soon...\n\n");
+}
+
 extern void user_main(void);
 
 static void cmd_usertest(void)
@@ -973,37 +1019,39 @@ static void cmd_usertest(void)
 
     /* Allocate kernel stack for TSS */
     void *kernel_stack = kmalloc(4096);
-    if (!kernel_stack) {
+    if (!kernel_stack)
+    {
         terminal_writestring("[ERROR] Failed to allocate kernel stack\n");
         return;
     }
-    
+
     terminal_writestring("[DEBUG] Kernel stack allocated at: 0x");
     terminal_write_hex((uint32_t)kernel_stack);
     terminal_writestring("\n");
-    
+
     uint32_t esp0 = (uint32_t)kernel_stack + 4096;
     terminal_writestring("[DEBUG] Setting TSS.ESP0 to: 0x");
     terminal_write_hex(esp0);
     terminal_writestring("\n");
-    
+
     tss_set_kernel_stack(esp0);
 
     /* User code at 0x10000000 (256MB - well below kernel at 0xC0000000) */
     uint32_t user_code_addr = 0x10000000;
     void *phys_code = pmm_alloc_block();
-    if (!phys_code) {
+    if (!phys_code)
+    {
         terminal_writestring("[ERROR] Failed to allocate physical page for code\n");
         kfree(kernel_stack);
         return;
     }
-    
+
     terminal_writestring("[DEBUG] Physical page for code: 0x");
     terminal_write_hex((uint32_t)phys_code);
     terminal_writestring("\n");
-    
+
     vmm_map_page(user_code_addr, (uint32_t)phys_code, VMM_PRESENT | VMM_WRITE | VMM_USER);
-    
+
     terminal_writestring("[DEBUG] Mapped code page: virt 0x");
     terminal_write_hex(user_code_addr);
     terminal_writestring(" -> phys 0x");
@@ -1013,20 +1061,21 @@ static void cmd_usertest(void)
     /* User stack at 0x20000000 (512MB - different region from code) */
     uint32_t user_stack_addr = 0x20000000;
     void *phys_stack = pmm_alloc_block();
-    if (!phys_stack) {
+    if (!phys_stack)
+    {
         terminal_writestring("[ERROR] Failed to allocate physical page for stack\n");
         vmm_unmap_page(user_code_addr);
         pmm_free_block(phys_code);
         kfree(kernel_stack);
         return;
     }
-    
+
     terminal_writestring("[DEBUG] Physical page for stack: 0x");
     terminal_write_hex((uint32_t)phys_stack);
     terminal_writestring("\n");
-    
+
     vmm_map_page(user_stack_addr, (uint32_t)phys_stack, VMM_PRESENT | VMM_WRITE | VMM_USER);
-    
+
     terminal_writestring("[DEBUG] Mapped stack page: virt 0x");
     terminal_write_hex(user_stack_addr);
     terminal_writestring(" -> phys 0x");
@@ -1038,7 +1087,7 @@ static void cmd_usertest(void)
     memset((void *)user_stack_addr, 0, PAGE_SIZE);
 
     /* User code: syscall then infinite loop (NOT hlt!)
-     * 
+     *
      * This code does:
      *   mov eax, 0      ; SYS_EXIT
      *   mov ebx, 42     ; exit code
@@ -1046,14 +1095,14 @@ static void cmd_usertest(void)
      *   jmp $           ; infinite loop (NOT hlt - that's privileged!)
      */
     static uint8_t user_code[] = {
-        0xB8, 0x00, 0x00, 0x00, 0x00,  /* mov eax, 0 */
-        0xBB, 0x2A, 0x00, 0x00, 0x00,  /* mov ebx, 42 */
-        0xCD, 0x80,                    /* int 0x80 */
-        0xEB, 0xFE                     /* jmp $ */
+        0xB8, 0x00, 0x00, 0x00, 0x00, /* mov eax, 0 */
+        0xBB, 0x2A, 0x00, 0x00, 0x00, /* mov ebx, 42 */
+        0xCD, 0x80,                   /* int 0x80 */
+        0xEB, 0xFE                    /* jmp $ */
     };
 
     memcpy((void *)user_code_addr, user_code, sizeof(user_code));
-    
+
     terminal_writestring("[DEBUG] Copied ");
     terminal_write_dec(sizeof(user_code));
     terminal_writestring(" bytes of user code\n");
@@ -1067,13 +1116,15 @@ static void cmd_usertest(void)
     terminal_writestring("\n");
 
     terminal_writestring("\n[DEBUG] Verifying page mappings...\n");
-    if (!vmm_is_mapped(user_code_addr)) {
+    if (!vmm_is_mapped(user_code_addr))
+    {
         terminal_writestring("[ERROR] Code page not mapped!\n");
         return;
     }
     terminal_writestring("[DEBUG] ✓ Code page is mapped\n");
-    
-    if (!vmm_is_mapped(user_stack_addr)) {
+
+    if (!vmm_is_mapped(user_stack_addr))
+    {
         terminal_writestring("[ERROR] Stack page not mapped!\n");
         return;
     }
@@ -1313,6 +1364,13 @@ static void shell_execute_command(const char *cmd)
     else if (strcmp(cmd, "usertest") == 0)
     {
         cmd_usertest();
+        success = true;
+    }
+
+    // user commands
+    else if (strncmp(cmd, "exec ", 5) == 0)
+    {
+        cmd_exec(args);
         success = true;
     }
 

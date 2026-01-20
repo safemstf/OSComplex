@@ -141,9 +141,15 @@ task_t* task_create(const char *name, void (*entry_point)(void), uint32_t priori
  * ================================================================ */
 task_t* task_create_user(const char *name, void *elf_data, uint32_t priority)
 {
-    task_t *task = kmalloc(sizeof(task_t));
-    if (!task) return NULL;
+    terminal_writestring("[TASK_CREATE_USER] Step 1: Allocating task structure...\n");
     
+    task_t *task = kmalloc(sizeof(task_t));
+    if (!task) {
+        terminal_writestring("[TASK_CREATE_USER] ERROR: Failed to allocate task\n");
+        return NULL;
+    }
+    
+    terminal_writestring("[TASK_CREATE_USER] Step 2: Initializing task structure...\n");
     memset(task, 0, sizeof(task_t));
     
     /* Basic properties */
@@ -155,40 +161,66 @@ task_t* task_create_user(const char *name, void *elf_data, uint32_t priority)
     task->ring = 3;  /* USER MODE! */
     task->time_slice = 10;
     
-    /* Create NEW page directory for this process */
+    terminal_writestring("[TASK_CREATE_USER] Step 3: PID=");
+    terminal_write_dec(task->pid);
+    terminal_writestring(", Name=");
+    terminal_writestring(task->name);
+    terminal_writestring("\n");
+    
+    terminal_writestring("[TASK_CREATE_USER] Step 4: Creating new page directory...\n");
     struct vmm_address_space *as = vmm_create_as();
     if (!as) {
+        terminal_writestring("[TASK_CREATE_USER] ERROR: vmm_create_as failed\n");
         kfree(task);
         return NULL;
     }
     task->page_directory = as->page_dir;
     
-    /* Allocate kernel stack (for syscalls) */
+    terminal_writestring("[TASK_CREATE_USER] Step 5: Page directory at 0x");
+    terminal_write_hex((uint32_t)task->page_directory);
+    terminal_writestring("\n");
+    
+    terminal_writestring("[TASK_CREATE_USER] Step 6: Allocating kernel stack...\n");
     task->kernel_stack = (uint32_t)kmalloc(4096);
     if (!task->kernel_stack) {
+        terminal_writestring("[TASK_CREATE_USER] ERROR: Failed to allocate kernel stack\n");
         vmm_destroy_as(as);
         kfree(task);
         return NULL;
     }
     
-    /* Allocate user stack in user space */
+    terminal_writestring("[TASK_CREATE_USER] Step 7: Kernel stack at 0x");
+    terminal_write_hex(task->kernel_stack);
+    terminal_writestring("\n");
+    
+    terminal_writestring("[TASK_CREATE_USER] Step 8: Allocating user stack...\n");
     uint32_t stack_phys = (uint32_t)pmm_alloc_block();
     if (!stack_phys) {
+        terminal_writestring("[TASK_CREATE_USER] ERROR: Failed to allocate user stack\n");
         kfree((void*)task->kernel_stack);
         vmm_destroy_as(as);
         kfree(task);
         return NULL;
     }
     
-    /* Map user stack */
+    terminal_writestring("[TASK_CREATE_USER] Step 9: User stack physical page at 0x");
+    terminal_write_hex(stack_phys);
+    terminal_writestring("\n");
+    
+    terminal_writestring("[TASK_CREATE_USER] Step 10: Mapping user stack...\n");
     vmm_map_page(USER_STACK_TOP - PAGE_SIZE, stack_phys, 
                  VMM_PRESENT | VMM_WRITE | VMM_USER);
     
     task->user_esp = USER_STACK_TOP;
     task->stack_bottom = USER_STACK_TOP - USER_STACK_SIZE;
     
-    /* Load ELF binary */
+    terminal_writestring("[TASK_CREATE_USER] Step 11: User ESP=0x");
+    terminal_write_hex(task->user_esp);
+    terminal_writestring("\n");
+    
+    terminal_writestring("[TASK_CREATE_USER] Step 12: Loading ELF binary...\n");
     if (!elf_load(task, elf_data)) {
+        terminal_writestring("[TASK_CREATE_USER] ERROR: elf_load failed\n");
         vmm_unmap_page(USER_STACK_TOP - PAGE_SIZE);
         pmm_free_block((void*)stack_phys);
         kfree((void*)task->kernel_stack);
@@ -197,24 +229,40 @@ task_t* task_create_user(const char *name, void *elf_data, uint32_t priority)
         return NULL;
     }
     
-    /* Setup context for first run */
+    terminal_writestring("[TASK_CREATE_USER] Step 13: ELF loaded, entry point=0x");
+    terminal_write_hex(task->code_start);
+    terminal_writestring("\n");
+    
+    terminal_writestring("[TASK_CREATE_USER] Step 14: Setting up user context...\n");
     task_setup_user_context(task);
     
-    /* Set parent */
+    terminal_writestring("[TASK_CREATE_USER] Step 15: Context setup complete\n");
+    terminal_writestring("[TASK_CREATE_USER]   ESP=0x");
+    terminal_write_hex(task->context.esp);
+    terminal_writestring(", EIP=0x");
+    terminal_write_hex(task->context.eip);
+    terminal_writestring("\n");
+    
+    terminal_writestring("[TASK_CREATE_USER] Step 16: Setting parent task...\n");
     task->parent = current_task;
     
-    /* Add to task list */
+    terminal_writestring("[TASK_CREATE_USER] Step 17: Adding to task list...\n");
+    terminal_writestring("[TASK_CREATE_USER]   task_list_head before: 0x");
+    terminal_write_hex((uint32_t)task_list_head);
+    terminal_writestring("\n");
+    
     task->next = task_list_head;
     task_list_head = task;
     
+    terminal_writestring("[TASK_CREATE_USER]   task_list_head after: 0x");
+    terminal_write_hex((uint32_t)task_list_head);
+    terminal_writestring("\n");
+    terminal_writestring("[TASK_CREATE_USER]   task address: 0x");
+    terminal_write_hex((uint32_t)task);
+    terminal_writestring("\n");
+    
     terminal_setcolor(vga_entry_color(VGA_COLOR_LIGHT_GREEN, VGA_COLOR_BLACK));
-    terminal_writestring("[TASK] Created user task '");
-    terminal_writestring(task->name);
-    terminal_writestring("' (PID ");
-    char buf[16];
-    itoa(task->pid, buf);
-    terminal_writestring(buf);
-    terminal_writestring(")\n");
+    terminal_writestring("[TASK_CREATE_USER] ✓ User task created successfully!\n");
     terminal_setcolor(vga_entry_color(VGA_COLOR_WHITE, VGA_COLOR_BLACK));
     
     return task;

@@ -1,4 +1,8 @@
-/* kernel/elf.c - ELF Binary Loader Implementation */
+/* kernel/elf.c - ELF Binary Loader Implementation - FIXED
+ * 
+ * CRITICAL FIX: Don't switch CR3 during loading!
+ * Instead, map pages into the task's page directory while staying in kernel space.
+ */
 
 #include "elf.h"
 #include "kernel.h"
@@ -52,7 +56,59 @@ uint32_t elf_get_entry(void *elf_data)
     return ehdr->e_entry;
 }
 
-/* Load ELF into task's address space */
+/* Helper: Map a page in the task's address space and get kernel-accessible address
+ * 
+ * This is the KEY to avoiding the CR3 switch problem!
+ * We allocate a physical page, map it in BOTH the task's page directory
+ * AND temporarily in kernel space so we can write to it.
+ */
+static void* map_user_page_accessible(task_t *task, uint32_t user_vaddr, uint32_t flags) {
+    /* Allocate physical page */
+    void *phys = pmm_alloc_block();
+    if (!phys) {
+        return NULL;
+    }
+    
+    /* Map in task's page directory (for when task runs) */
+    /* We need to manually manipulate the task's page directory here */
+    uint32_t pd_idx = (user_vaddr >> 22) & 0x3FF;
+    uint32_t pt_idx = (user_vaddr >> 12) & 0x3FF;
+    
+    uint32_t *task_pd = task->page_directory;
+    
+    /* Get or create page table in task's address space */
+    if (!(task_pd[pd_idx] & VMM_PRESENT)) {
+        /* Allocate page table */
+        void *pt_phys = pmm_alloc_block();
+        if (!pt_phys) {
+            pmm_free_block(phys);
+            return NULL;
+        }
+        
+        /* Zero it (we need to map it temporarily to zero it) */
+        uint32_t temp_vaddr = 0xF0000000;  /* Temporary kernel mapping area */
+        vmm_map_page(temp_vaddr, (uint32_t)pt_phys, VMM_PRESENT | VMM_WRITE);
+        memset((void*)temp_vaddr, 0, PAGE_SIZE);
+        vmm_unmap_page(temp_vaddr);
+        
+        /* Install in task's page directory */
+        task_pd[pd_idx] = ((uint32_t)pt_phys) | VMM_PRESENT | VMM_WRITE | VMM_USER;
+    }
+    
+    /* Get page table */
+    uint32_t *task_pt = (uint32_t*)(task_pd[pd_idx] & ~0xFFF);
+    
+    /* Map page in task's page table */
+    task_pt[pt_idx] = ((uint32_t)phys) | (flags & 0xFFF);
+    
+    /* Also map in kernel space temporarily so we can write to it */
+    uint32_t kernel_temp_vaddr = 0xE0000000 + ((uint32_t)phys & 0x00FFFFFF);
+    vmm_map_page(kernel_temp_vaddr, (uint32_t)phys, VMM_PRESENT | VMM_WRITE);
+    
+    return (void*)kernel_temp_vaddr;
+}
+
+/* Load ELF into task's address space - FIXED VERSION */
 int elf_load(task_t *task, void *elf_data)
 {
     /* Validate ELF */
@@ -67,16 +123,12 @@ int elf_load(task_t *task, void *elf_data)
     terminal_writestring("[ELF] Entry point: 0x");
     terminal_write_hex(ehdr->e_entry);
     terminal_writestring("\n");
+    terminal_setcolor(vga_entry_color(VGA_COLOR_WHITE, VGA_COLOR_BLACK));
     
     /* Get program headers */
     elf32_phdr_t *phdr = (elf32_phdr_t *)((uint8_t *)elf_data + ehdr->e_phoff);
     
-    /* Switch to task's address space for loading */
-    uint32_t *old_pd = vmm_current_as->page_dir;
-    vmm_current_as->page_dir = task->page_directory;
-    __asm__ volatile("mov %0, %%cr3" :: "r"(task->page_directory) : "memory");
-    
-    /* Load each LOAD segment */
+    /* Load each LOAD segment - WITHOUT SWITCHING CR3! */
     for (int i = 0; i < ehdr->e_phnum; i++) {
         if (phdr[i].p_type != PT_LOAD) {
             continue;  /* Skip non-loadable segments */
@@ -84,78 +136,87 @@ int elf_load(task_t *task, void *elf_data)
         
         terminal_writestring("[ELF] Loading segment ");
         terminal_write_dec(i);
-        terminal_writestring(": 0x");
+        terminal_writestring(": vaddr=0x");
         terminal_write_hex(phdr[i].p_vaddr);
-        terminal_writestring(" - 0x");
-        terminal_write_hex(phdr[i].p_vaddr + phdr[i].p_memsz);
-        terminal_writestring(" (");
-        
+        terminal_writestring(" filesz=");
+        terminal_write_dec(phdr[i].p_filesz);
+        terminal_writestring(" memsz=");
+        terminal_write_dec(phdr[i].p_memsz);
+        terminal_writestring(" flags=");
         if (phdr[i].p_flags & PF_R) terminal_putchar('R');
         if (phdr[i].p_flags & PF_W) terminal_putchar('W');
         if (phdr[i].p_flags & PF_X) terminal_putchar('X');
-        terminal_writestring(")\n");
+        terminal_writestring("\n");
         
-        /* Calculate number of pages needed */
-        uint32_t vaddr_start = phdr[i].p_vaddr & ~0xFFF;  /* Page align down */
+        /* Calculate pages needed */
+        uint32_t vaddr_start = phdr[i].p_vaddr & ~0xFFF;
         uint32_t vaddr_end = (phdr[i].p_vaddr + phdr[i].p_memsz + 0xFFF) & ~0xFFF;
         uint32_t num_pages = (vaddr_end - vaddr_start) / PAGE_SIZE;
         
-        /* Allocate and map pages */
-        for (uint32_t j = 0; j < num_pages; j++) {
-            uint32_t vaddr = vaddr_start + j * PAGE_SIZE;
-            void *phys = pmm_alloc_block();
+        terminal_writestring("[ELF]   Allocating ");
+        terminal_write_dec(num_pages);
+        terminal_writestring(" pages starting at 0x");
+        terminal_write_hex(vaddr_start);
+        terminal_writestring("\n");
+        
+        /* Map pages and copy data */
+        for (uint32_t page_num = 0; page_num < num_pages; page_num++) {
+            uint32_t user_vaddr = vaddr_start + page_num * PAGE_SIZE;
             
-            if (!phys) {
-                terminal_writestring("[ELF] Error: Out of memory\n");
-                vmm_current_as->page_dir = old_pd;
-                __asm__ volatile("mov %0, %%cr3" :: "r"(old_pd) : "memory");
-                return 0;
-            }
-            
-            /* Map with appropriate flags */
+            /* Determine flags */
             uint32_t flags = VMM_PRESENT | VMM_USER;
             if (phdr[i].p_flags & PF_W) {
                 flags |= VMM_WRITE;
             }
             
-            vmm_map_page(vaddr, (uint32_t)phys, flags);
+            /* Map page (accessible from kernel) */
+            void *kernel_addr = map_user_page_accessible(task, user_vaddr, flags);
+            if (!kernel_addr) {
+                terminal_writestring("[ELF] ERROR: Out of memory\n");
+                return 0;
+            }
             
-            /* Zero the page */
-            memset((void *)vaddr, 0, PAGE_SIZE);
-        }
-        
-        /* Copy segment data from file */
-        if (phdr[i].p_filesz > 0) {
-            uint8_t *src = (uint8_t *)elf_data + phdr[i].p_offset;
-            uint8_t *dst = (uint8_t *)phdr[i].p_vaddr;
-            memcpy(dst, src, phdr[i].p_filesz);
-        }
-        
-        /* Zero BSS (p_memsz > p_filesz) */
-        if (phdr[i].p_memsz > phdr[i].p_filesz) {
-            uint8_t *bss_start = (uint8_t *)(phdr[i].p_vaddr + phdr[i].p_filesz);
-            size_t bss_size = phdr[i].p_memsz - phdr[i].p_filesz;
-            memset(bss_start, 0, bss_size);
+            /* Zero the entire page first */
+            memset(kernel_addr, 0, PAGE_SIZE);
+            
+            /* Copy data if this page contains file data */
+            uint32_t page_offset_in_segment = user_vaddr - phdr[i].p_vaddr;
+            
+            if (page_offset_in_segment < phdr[i].p_filesz) {
+                /* This page has data to copy */
+                uint32_t copy_start = (page_offset_in_segment > 0) ? 0 : (phdr[i].p_vaddr & 0xFFF);
+                uint32_t file_offset = phdr[i].p_offset + page_offset_in_segment;
+                uint32_t copy_size = PAGE_SIZE - copy_start;
+                
+                /* Don't copy past end of file data */
+                uint32_t remaining = phdr[i].p_filesz - page_offset_in_segment;
+                if (copy_size > remaining) {
+                    copy_size = remaining;
+                }
+                
+                if (copy_size > 0) {
+                    uint8_t *src = (uint8_t *)elf_data + file_offset;
+                    uint8_t *dst = (uint8_t *)kernel_addr + copy_start;
+                    memcpy(dst, src, copy_size);
+                }
+            }
+            
+            /* Unmap from kernel temp space */
+            vmm_unmap_page((uint32_t)kernel_addr);
         }
         
         /* Track memory regions */
         if (phdr[i].p_flags & PF_X) {
-            /* Code segment */
             task->code_start = phdr[i].p_vaddr;
             task->code_end = phdr[i].p_vaddr + phdr[i].p_memsz;
         } else if (phdr[i].p_flags & PF_W) {
-            /* Data segment */
             task->data_start = phdr[i].p_vaddr;
             task->data_end = phdr[i].p_vaddr + phdr[i].p_memsz;
         }
     }
     
-    /* Restore original address space */
-    vmm_current_as->page_dir = old_pd;
-    __asm__ volatile("mov %0, %%cr3" :: "r"(old_pd) : "memory");
-    
-    /* Set entry point */
-    task->context.eip = ehdr->e_entry;
+    /* Set entry point - this is used by task_setup_user_context */
+    task->code_start = ehdr->e_entry;
     
     terminal_setcolor(vga_entry_color(VGA_COLOR_LIGHT_GREEN, VGA_COLOR_BLACK));
     terminal_writestring("[ELF] ✓ Executable loaded successfully\n");
