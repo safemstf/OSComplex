@@ -26,6 +26,11 @@ static size_t history_count = 0;
 extern char keyboard_buffer_pop(void);
 extern bool keyboard_has_data(void);
 
+static void cmd_forktest(void);
+static void cmd_waitdemo(void);
+static void cmd_syscalltest(void);
+static void test_child_task(void);
+
 static void shell_display_prompt(void)
 {
     terminal_setcolor(vga_entry_color(VGA_COLOR_LIGHT_CYAN, VGA_COLOR_BLACK));
@@ -41,41 +46,53 @@ static void cmd_help(void)
     terminal_writestring("╚══════════════════════════════════════════════════════════╝\n\n");
 
     terminal_setcolor(vga_entry_color(VGA_COLOR_WHITE, VGA_COLOR_BLACK));
+
     terminal_writestring("System Commands:\n");
-    terminal_writestring("  help        - Show this help message\n");
-    terminal_writestring("  clear       - Clear the screen\n");
-    terminal_writestring("  about       - About OSComplex\n");
-    terminal_writestring("  halt        - Shutdown the system\n");
+    terminal_writestring("  help             - Show this help message\n");
+    terminal_writestring("  clear            - Clear the screen\n");
+    terminal_writestring("  about            - About OSComplex\n");
+    terminal_writestring("  halt             - Shutdown the system\n");
 
-    terminal_writestring("\nMemory Commands:\n");
-    terminal_writestring("  meminfo     - Show physical memory usage\n");
-    terminal_writestring("  sysinfo     - Show system information\n");
-    terminal_writestring("  testpf      - Test page fault recovery\n");
-    terminal_writestring("  heaptest    - Test heap allocator\n");
+    terminal_writestring("\nMemory & System:\n");
+    terminal_writestring("  meminfo          - Show physical memory usage\n");
+    terminal_writestring("  sysinfo          - Show system information\n");
+    terminal_writestring("  testpf           - Test page fault handling\n");
+    terminal_writestring("  heaptest         - Test heap allocator\n");
 
-    terminal_writestring("\nTask Commands:\n");
-    terminal_writestring("  ps          - List all tasks\n");
-    terminal_writestring("  sched       - Show scheduler statistics\n");
-    terminal_writestring("  spawn       - Create test tasks\n");
+    terminal_writestring("\nTask & Scheduler:\n");
+    terminal_writestring("  ps               - List all running tasks\n");
+    terminal_writestring("  sched            - Show scheduler statistics\n");
+    terminal_writestring("  spawn            - Spawn test tasks\n");
 
-    terminal_writestring("\nOther:\n");
-    terminal_writestring("  ai          - Show AI learning statistics\n");
-    terminal_writestring("  echo <text> - Display text\n");
+    terminal_writestring("\nFile System:\n");
+    terminal_writestring("  ls [path]        - List directory contents\n");
+    terminal_writestring("  pwd              - Print current directory\n");
+    terminal_writestring("  cd [path]        - Change directory\n");
+    terminal_writestring("  mkdir <name>     - Create a directory\n");
+    terminal_writestring("  rmdir <name>     - Remove a directory\n");
+    terminal_writestring("  touch <file>     - Create an empty file\n");
+    terminal_writestring("  cat <file>       - Display file contents\n");
+    terminal_writestring("  rm <file>        - Delete a file\n");
 
     terminal_writestring("\nDisk Commands:\n");
-    terminal_writestring("  diskinfo       - Show ATA drive information\n");
-    terminal_writestring("  readsector <n> - Read sector at LBA n\n");
-    terminal_writestring("  writesector <n> <text> - Write text to sector n\n");
+    terminal_writestring("  diskinfo         - Show disk information\n");
+    terminal_writestring("  readsector <n>   - Read sector at LBA n\n");
+    terminal_writestring("  writesector <n> <text>\n");
+    terminal_writestring("                   - Write text to sector n\n");
 
     terminal_writestring("\nUser Mode:\n");
-    terminal_writestring("  usertest    - Test user mode execution\n");
+    terminal_writestring("  usertest         - Test user-mode execution\n");
+    terminal_writestring("  exec <program>   - Execute a user program\n");
 
-    terminal_writestring("\n");
-    terminal_setcolor(vga_entry_color(VGA_COLOR_LIGHT_CYAN, VGA_COLOR_BLACK));
-    terminal_writestring("💡 AI Tips:\n");
-    terminal_setcolor(vga_entry_color(VGA_COLOR_WHITE, VGA_COLOR_BLACK));
-    terminal_writestring("  • Press TAB for AI-powered suggestions\n");
-    terminal_writestring("  • The AI learns your command patterns\n\n");
+    terminal_writestring("  forktest      - Test fork/wait functionality\n");
+    terminal_writestring("  waitdemo      - Show child process states\n");
+    terminal_writestring("  syscalltest   - Test system call infrastructure\n");
+
+    terminal_writestring("\nUtilities:\n");
+    terminal_writestring("  echo <text>      - Print text to screen\n");
+    terminal_writestring("  echo <text> > <file>\n");
+    terminal_writestring("                   - Write text to a file\n");
+    terminal_writestring("  ai               - Show AI learning statistics\n");
 }
 
 static void cmd_about(void)
@@ -1153,6 +1170,171 @@ static void cmd_usertest(void)
     kfree(kernel_stack);
 }
 
+/* Command: forktest - Test fork() and wait() */
+static void cmd_forktest(void)
+{
+    terminal_setcolor(vga_entry_color(VGA_COLOR_LIGHT_CYAN, VGA_COLOR_BLACK));
+    terminal_writestring("\n╔══════════════════════════════════════════════════════════╗\n");
+    terminal_writestring("║              Fork/Wait Test                              ║\n");
+    terminal_writestring("╚══════════════════════════════════════════════════════════╝\n\n");
+    terminal_setcolor(vga_entry_color(VGA_COLOR_WHITE, VGA_COLOR_BLACK));
+
+    terminal_writestring("This command demonstrates fork() and wait() system calls\n");
+    terminal_writestring("in kernel mode (simulated).\n\n");
+
+    terminal_writestring("Creating child task...\n");
+
+    /* Create a child task that will exit after some work */
+    task_t *child = task_create("test-child", test_child_task, 1);
+    if (!child)
+    {
+        terminal_setcolor(vga_entry_color(VGA_COLOR_LIGHT_RED, VGA_COLOR_BLACK));
+        terminal_writestring("ERROR: Failed to create child task\n");
+        terminal_setcolor(vga_entry_color(VGA_COLOR_WHITE, VGA_COLOR_BLACK));
+        return;
+    }
+
+    terminal_writestring("Child task created with PID ");
+    terminal_write_dec(child->pid);
+    terminal_writestring("\n");
+
+    terminal_writestring("\nNote: For true fork() testing, you need to:\n");
+    terminal_writestring("1. Load a user-mode program\n");
+    terminal_writestring("2. That program calls fork() via INT 0x80\n");
+    terminal_writestring("3. Parent calls wait() to get child's exit status\n\n");
+
+    /* Add child to scheduler */
+    scheduler_add_task(child);
+
+    terminal_writestring("Child added to scheduler. It will run soon.\n");
+    terminal_writestring("Use 'ps' to see the task list.\n\n");
+}
+
+/* Helper task for forktest */
+static void test_child_task(void)
+{
+    terminal_setcolor(vga_entry_color(VGA_COLOR_LIGHT_GREEN, VGA_COLOR_BLACK));
+    terminal_writestring("\n[CHILD TASK] Running! PID=");
+    terminal_write_dec(current_task->pid);
+    terminal_writestring("\n");
+    terminal_setcolor(vga_entry_color(VGA_COLOR_WHITE, VGA_COLOR_BLACK));
+
+    for (int i = 0; i < 5; i++)
+    {
+        terminal_writestring("[CHILD] Iteration ");
+        terminal_write_dec(i);
+        terminal_writestring("\n");
+        task_sleep(100); /* Sleep 100ms */
+    }
+
+    terminal_setcolor(vga_entry_color(VGA_COLOR_LIGHT_GREEN, VGA_COLOR_BLACK));
+    terminal_writestring("[CHILD TASK] Exiting with code 42\n");
+    terminal_setcolor(vga_entry_color(VGA_COLOR_WHITE, VGA_COLOR_BLACK));
+
+    task_exit(42);
+}
+
+/* Command: waitdemo - Demonstrate wait() functionality */
+static void cmd_waitdemo(void)
+{
+    terminal_setcolor(vga_entry_color(VGA_COLOR_LIGHT_CYAN, VGA_COLOR_BLACK));
+    terminal_writestring("\n╔══════════════════════════════════════════════════════════╗\n");
+    terminal_writestring("║              Wait() Demonstration                        ║\n");
+    terminal_writestring("╚══════════════════════════════════════════════════════════╝\n\n");
+    terminal_setcolor(vga_entry_color(VGA_COLOR_WHITE, VGA_COLOR_BLACK));
+
+    terminal_writestring("Current task PID: ");
+    terminal_write_dec(current_task->pid);
+    terminal_writestring("\n\n");
+
+    /* Check if current task has children */
+    if (!current_task->first_child)
+    {
+        terminal_writestring("This task has no children.\n");
+        terminal_writestring("Use 'forktest' to create a child task first.\n\n");
+        return;
+    }
+
+    terminal_writestring("Children of this task:\n");
+    task_t *child = current_task->first_child;
+    while (child)
+    {
+        terminal_writestring("  PID ");
+        terminal_write_dec(child->pid);
+        terminal_writestring(" - ");
+        terminal_writestring(child->name);
+        terminal_writestring(" [");
+        switch (child->state)
+        {
+        case TASK_READY:
+            terminal_writestring("READY");
+            break;
+        case TASK_RUNNING:
+            terminal_writestring("RUNNING");
+            break;
+        case TASK_BLOCKED:
+            terminal_writestring("BLOCKED");
+            break;
+        case TASK_SLEEPING:
+            terminal_writestring("SLEEPING");
+            break;
+        case TASK_ZOMBIE:
+            terminal_writestring("ZOMBIE");
+            break;
+        default:
+            terminal_writestring("UNKNOWN");
+            break;
+        }
+        terminal_writestring("]\n");
+
+        if (child->state == TASK_ZOMBIE)
+        {
+            terminal_writestring("    Exit code: ");
+            terminal_write_dec(child->exit_code);
+            terminal_writestring("\n");
+        }
+
+        child = child->next_sibling;
+    }
+
+    terminal_writestring("\nNote: In user mode, parent would call wait() to reap zombies.\n\n");
+}
+
+/* Command: syscalltest - Test system call infrastructure */
+static void cmd_syscalltest(void)
+{
+    terminal_setcolor(vga_entry_color(VGA_COLOR_LIGHT_CYAN, VGA_COLOR_BLACK));
+    terminal_writestring("\n╔══════════════════════════════════════════════════════════╗\n");
+    terminal_writestring("║           System Call Test                               ║\n");
+    terminal_writestring("╚══════════════════════════════════════════════════════════╝\n\n");
+    terminal_setcolor(vga_entry_color(VGA_COLOR_WHITE, VGA_COLOR_BLACK));
+
+    terminal_writestring("Available system calls:\n");
+    terminal_writestring("  0 - SYS_EXIT    Exit current process\n");
+    terminal_writestring("  1 - SYS_WRITE   Write string to terminal\n");
+    terminal_writestring("  2 - SYS_READ    Read from keyboard (TODO)\n");
+    terminal_writestring("  3 - SYS_YIELD   Yield CPU to other tasks\n");
+    terminal_writestring("  4 - SYS_GETPID  Get current process ID\n");
+    terminal_writestring("  5 - SYS_SLEEP   Sleep for N milliseconds\n");
+    terminal_writestring("  6 - SYS_FORK    Create child process\n");
+    terminal_writestring("  7 - SYS_EXEC    Execute new program\n");
+    terminal_writestring("  8 - SYS_WAIT    Wait for child to exit\n\n");
+
+    terminal_writestring("Testing SYS_GETPID...\n");
+
+    /* Simulate syscall by calling the function directly */
+    uint32_t pid = sys_getpid();
+
+    terminal_writestring("Current PID: ");
+    terminal_write_dec(pid);
+    terminal_writestring("\n\n");
+
+    terminal_writestring("To test fork/wait/exec properly, you need:\n");
+    terminal_writestring("1. A user-mode program that makes INT 0x80 calls\n");
+    terminal_writestring("2. Compile it as an ELF binary\n");
+    terminal_writestring("3. Load it with 'exec <program>'\n\n");
+}
+
 static void shell_execute_command(const char *cmd)
 {
     if (!cmd || !*cmd)
@@ -1371,6 +1553,22 @@ static void shell_execute_command(const char *cmd)
     else if (strncmp(cmd, "exec ", 5) == 0)
     {
         cmd_exec(args);
+        success = true;
+    }
+
+    else if (strcmp(cmd, "forktest") == 0)
+    {
+        cmd_forktest();
+        success = true;
+    }
+    else if (strcmp(cmd, "waitdemo") == 0)
+    {
+        cmd_waitdemo();
+        success = true;
+    }
+    else if (strcmp(cmd, "syscalltest") == 0)
+    {
+        cmd_syscalltest();
         success = true;
     }
 

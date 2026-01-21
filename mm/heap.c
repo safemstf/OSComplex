@@ -253,6 +253,31 @@ void kfree(void *ptr)
     merge_blocks();
 }
 
+/* Allocate aligned memory */
+void *kmalloc_aligned(size_t size, size_t alignment)
+{
+    /* For page-aligned allocations, just use PMM directly */
+    if (alignment == PAGE_SIZE && size == PAGE_SIZE) {
+        return pmm_alloc_block();
+    }
+    
+    /* For other alignments, allocate extra space and align manually */
+    size_t total_size = size + alignment + sizeof(void*);
+    void *ptr = kmalloc(total_size);
+    if (!ptr) {
+        return NULL;
+    }
+    
+    /* Calculate aligned address */
+    uintptr_t addr = (uintptr_t)ptr;
+    uintptr_t aligned = (addr + sizeof(void*) + alignment - 1) & ~(alignment - 1);
+    
+    /* Store original pointer before aligned address for kfree */
+    *((void**)(aligned - sizeof(void*))) = ptr;
+    
+    return (void*)aligned;
+}
+
 /* Get heap statistics for debugging */
 heap_stats_t heap_get_stats(void)
 {

@@ -21,8 +21,9 @@ struct registers;
 #define SYS_SLEEP   5
 #define SYS_FORK    6
 #define SYS_EXEC    7
+#define SYS_WAIT    8
 
-#define SYSCALL_MAX 8
+#define SYSCALL_MAX 9
 
 /* ================================================================
  * INITIALIZATION
@@ -48,6 +49,7 @@ void     sys_yield(void);
 uint32_t sys_getpid(void);
 void     sys_sleep(uint32_t ms);
 int      sys_fork(void);
-int      sys_exec(const char *path);  /* FIXED: changed from void *entry */
+int      sys_exec(const char *path);
+int      sys_wait(int *status);
 
 #endif /* SYSCALL_H */

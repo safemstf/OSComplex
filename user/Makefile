@@ -9,7 +9,7 @@ OBJCOPY = objcopy
 CFLAGS = -std=c99 -ffreestanding -nostdlib -fno-builtin -fno-stack-protector -Wall -Wextra
 
 # User programs to build
-PROGRAMS = hello
+PROGRAMS = hello usertest_fork
 
 all: $(PROGRAMS)
 
@@ -24,6 +24,18 @@ hello: hello.o
 hello.o: hello.c
 	@echo "[CC] Compiling hello.c..."
 	@$(CC) $(CFLAGS) -c hello.c -o hello.o
+
+# Build usertest_fork program
+usertest_fork: usertest_fork.o
+	@echo "[LD] Linking usertest_fork..."
+	@$(LD) -T user.ld usertest_fork.o -o usertest_fork.elf
+	@$(OBJCOPY) -O binary usertest_fork.elf usertest_fork.bin
+	@echo "[✓] User program 'usertest_fork' built successfully"
+	@ls -lh usertest_fork.elf usertest_fork.bin
+
+usertest_fork.o: usertest_fork.c
+	@echo "[CC] Compiling usertest_fork.c..."
+	@$(CC) $(CFLAGS) -c usertest_fork.c -o usertest_fork.o
 
 clean:
 	@rm -f *.o *.elf *.bin

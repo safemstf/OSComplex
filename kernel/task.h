@@ -5,7 +5,7 @@
  * - Task states and priorities
  * - CPU register context
  * 
- * UPDATED: Added user mode support for Phase 4
+ * UPDATED: Added parent-child process hierarchy for fork/wait
  */
 
 #ifndef TASK_H
@@ -95,12 +95,18 @@ typedef struct task {
     uint32_t total_time;         /* Total CPU time used */
     uint32_t wake_time;          /* Wake up at this tick (for TASK_SLEEPING) */
     
-    /* Task tree */
+    /* PROCESS HIERARCHY (Phase 5) */
     struct task *parent;         /* Parent task */
+    uint32_t parent_pid;         /* Parent PID (for safety) */
+    struct task *first_child;    /* First child in linked list */
+    struct task *next_sibling;   /* Next sibling */
+    
+    /* Scheduler queue */
     struct task *next;           /* Next in scheduler queue */
     
     /* Exit status */
     int exit_code;               /* Return value when task exits */
+    bool waited;                 /* Has parent waited for this zombie? */
 } task_t;
 
 /* ================================================================
@@ -116,6 +122,7 @@ task_t* task_create(const char *name, void (*entry_point)(void), uint32_t priori
 /* Create a new user mode task from ELF binary */
 task_t* task_create_user(const char *name, void *elf_data, uint32_t priority);
 
+/* Setup user mode context for a task */
 void task_setup_user_context(task_t *task);
 
 /* Destroy a task */
@@ -141,6 +148,16 @@ void task_unblock(task_t *task);
 
 /* Sleep for N milliseconds */
 void task_sleep(uint32_t ms);
+
+/* ================================================================
+ * PROCESS HIERARCHY FUNCTIONS (Phase 5)
+ * ================================================================ */
+
+/* Add child to parent's child list */
+void task_add_child(task_t *parent, task_t *child);
+
+/* Remove child from parent's child list */
+void task_remove_child(task_t *parent, task_t *child);
 
 /* ================================================================
  * KERNEL TASK

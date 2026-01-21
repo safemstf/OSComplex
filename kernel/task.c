@@ -1,8 +1,7 @@
 /* kernel/task.c - Task Management Implementation
  * 
  * Implements process creation, destruction, and context switching.
- * CLEANED: Removed duplicate code, organized clearly
- * FIXED: Removed macro conflicts and static declaration issues
+ * UPDATED: Added process hierarchy management for fork/wait
  */
 
 #include "task.h"
@@ -58,7 +57,11 @@ void task_init(void)
     kernel_task->ring = 0;  /* Kernel mode */
     kernel_task->page_directory = vmm_current_as->page_dir;
     kernel_task->parent = NULL;
+    kernel_task->parent_pid = 0;
+    kernel_task->first_child = NULL;
+    kernel_task->next_sibling = NULL;
     kernel_task->next = NULL;
+    kernel_task->waited = false;
     
     current_task = kernel_task;
     task_list_head = kernel_task;
@@ -66,6 +69,42 @@ void task_init(void)
     terminal_setcolor(vga_entry_color(VGA_COLOR_LIGHT_GREEN, VGA_COLOR_BLACK));
     terminal_writestring("[TASK] Kernel idle task created (PID 0)\n");
     terminal_setcolor(vga_entry_color(VGA_COLOR_WHITE, VGA_COLOR_BLACK));
+}
+
+/* ================================================================
+ * PROCESS HIERARCHY MANAGEMENT
+ * ================================================================ */
+void task_add_child(task_t *parent, task_t *child)
+{
+    if (!parent || !child) return;
+    
+    child->parent = parent;
+    child->parent_pid = parent->pid;
+    child->next_sibling = parent->first_child;
+    parent->first_child = child;
+}
+
+void task_remove_child(task_t *parent, task_t *child)
+{
+    if (!parent || !child) return;
+    
+    task_t *prev = NULL;
+    task_t *curr = parent->first_child;
+    
+    while (curr) {
+        if (curr == child) {
+            if (prev) {
+                prev->next_sibling = curr->next_sibling;
+            } else {
+                parent->first_child = curr->next_sibling;
+            }
+            child->parent = NULL;
+            child->next_sibling = NULL;
+            return;
+        }
+        prev = curr;
+        curr = curr->next_sibling;
+    }
 }
 
 /* ================================================================
@@ -91,6 +130,13 @@ task_t* task_create(const char *name, void (*entry_point)(void), uint32_t priori
     task->time_slice = 10;
     task->total_time = 0;
     task->exit_code = 0;
+    task->waited = false;
+    
+    /* Process hierarchy */
+    task->parent = NULL;
+    task->parent_pid = 0;
+    task->first_child = NULL;
+    task->next_sibling = NULL;
     
     /* Allocate kernel stack */
     task->kernel_stack = (uint32_t)kmalloc(4096);
@@ -115,8 +161,10 @@ task_t* task_create(const char *name, void (*entry_point)(void), uint32_t priori
     /* Setup initial stack */
     task_setup_kernel_stack(task, entry_point);
     
-    /* Set parent */
-    task->parent = current_task;
+    /* Set parent to current task */
+    if (current_task) {
+        task_add_child(current_task, task);
+    }
     
     /* Add to task list */
     task->next = task_list_head;
@@ -160,6 +208,13 @@ task_t* task_create_user(const char *name, void *elf_data, uint32_t priority)
     task->priority = priority;
     task->ring = 3;  /* USER MODE! */
     task->time_slice = 10;
+    task->waited = false;
+    
+    /* Process hierarchy */
+    task->parent = NULL;
+    task->parent_pid = 0;
+    task->first_child = NULL;
+    task->next_sibling = NULL;
     
     terminal_writestring("[TASK_CREATE_USER] Step 3: PID=");
     terminal_write_dec(task->pid);
@@ -244,7 +299,9 @@ task_t* task_create_user(const char *name, void *elf_data, uint32_t priority)
     terminal_writestring("\n");
     
     terminal_writestring("[TASK_CREATE_USER] Step 16: Setting parent task...\n");
-    task->parent = current_task;
+    if (current_task) {
+        task_add_child(current_task, task);
+    }
     
     terminal_writestring("[TASK_CREATE_USER] Step 17: Adding to task list...\n");
     terminal_writestring("[TASK_CREATE_USER]   task_list_head before: 0x");
@@ -379,6 +436,11 @@ void task_exit(int exit_code)
     terminal_writestring("\n");
     terminal_setcolor(vga_entry_color(VGA_COLOR_WHITE, VGA_COLOR_BLACK));
     
+    /* Wake up parent if it's waiting */
+    if (current_task->parent && current_task->parent->state == TASK_BLOCKED) {
+        task_unblock(current_task->parent);
+    }
+    
     task_yield();
     
     while(1) __asm__ volatile("hlt");
@@ -423,7 +485,12 @@ void task_destroy(task_t *task)
         return;
     }
     
-    /* Remove from list */
+    /* Remove from parent's child list */
+    if (task->parent) {
+        task_remove_child(task->parent, task);
+    }
+    
+    /* Remove from scheduler list */
     if (task_list_head == task) {
         task_list_head = task->next;
     } else {
