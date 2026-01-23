@@ -410,7 +410,7 @@ void terminal_setcolor(uint8_t color)
     terminal_color = color;
 }
 
-/* Numeric helpers (unchanged) */
+/* Numeric helpers */
 void terminal_write_dec(uint32_t n)
 {
     char buffer[12]; // enough for 32-bit uint

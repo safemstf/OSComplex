@@ -84,6 +84,7 @@ typedef struct task {
     /* User memory layout */
     uint32_t code_start;         /* Code segment start */
     uint32_t code_end;           /* Code segment end */
+    uint32_t entry_point;        /* Entry point address */
     uint32_t data_start;         /* Data segment start */
     uint32_t data_end;           /* Data segment end */
     uint32_t heap_start;         /* Heap start */

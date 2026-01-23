@@ -1020,9 +1020,12 @@ static void cmd_exec(const char *args)
     terminal_writestring("[EXEC] Task PID: ");
     terminal_write_dec(user_task->pid);
     terminal_writestring("\n");
+
+    scheduler_add_task(user_task);
+    
+    terminal_writestring("[EXEC] ✓ Task added to scheduler\n");
     terminal_setcolor(vga_entry_color(VGA_COLOR_WHITE, VGA_COLOR_BLACK));
 
-    /* The scheduler will run it on the next tick! */
     terminal_writestring("[EXEC] Program will start running soon...\n\n");
 }
 

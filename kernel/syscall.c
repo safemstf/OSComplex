@@ -330,6 +330,33 @@ int sys_exec(const char *path)
     terminal_write_dec(bytes_read);
     terminal_writestring(" bytes\n");
     
+    /* If we're in kernel mode (shell), create a NEW user task */
+    if (!current_task || current_task->ring == 0) {
+        /* Create new user task */
+        task_t *user_task = task_create_user(path, elf_data, 1);
+        kfree(elf_data);
+        
+        if (!user_task) {
+            terminal_writestring("[EXEC] Failed to create user task\n");
+            return -1;
+        }
+        
+        terminal_writestring("[EXEC] Task PID: ");
+        terminal_write_dec(user_task->pid);
+        terminal_writestring("\n");
+        
+        /* Add to scheduler */
+        extern void scheduler_add_task(task_t *task);
+        scheduler_add_task(user_task);
+        
+        terminal_setcolor(vga_entry_color(VGA_COLOR_LIGHT_GREEN, VGA_COLOR_BLACK));
+        terminal_writestring("[EXEC] ✓ Task added to scheduler\n");
+        terminal_setcolor(vga_entry_color(VGA_COLOR_WHITE, VGA_COLOR_BLACK));
+        
+        return 0;
+    }
+    
+    /* If we're already in user mode, replace current process */
     /* Load ELF into current task's address space */
     if (!elf_load(current_task, elf_data)) {
         kfree(elf_data);

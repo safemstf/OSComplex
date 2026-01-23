@@ -172,6 +172,36 @@ void keyboard_handler(void)
      * If we don't, the keyboard controller won't send more interrupts. */
 
     uint8_t scancode = inb(KEYBOARD_DATA_PORT);
+    /* Handle extended scancode prefix */
+    if (scancode == 0xE0)
+    {
+        extended_scancode = true;
+        return;
+    }
+
+    /* Process extended scancode */
+    if (extended_scancode)
+    {
+        extended_scancode = false;
+
+        /* Ignore key releases */
+        if (scancode & 0x80)
+            return;
+
+        switch (scancode)
+        {
+        case 0x49: /* Page Up */
+            terminal_scrollback_page_up();
+            return;
+
+        case 0x51: /* Page Down */
+            terminal_scrollback_page_down();
+            return;
+
+        default:
+            return;
+        }
+    }
 
     /* Check if this is a key release (bit 7 set) */
     if (scancode & 0x80)
@@ -226,37 +256,6 @@ void keyboard_handler(void)
         caps_lock = !caps_lock;
         /* TODO: Update keyboard LEDs to show Caps Lock state */
         return;
-    }
-
-    /* Handle extended scancode prefix */
-    if (scancode == 0xE0)
-    {
-        extended_scancode = true;
-        return;
-    }
-
-    /* Process extended scancode */
-    if (extended_scancode)
-    {
-        extended_scancode = false;
-
-        /* Ignore key releases */
-        if (scancode & 0x80)
-            return;
-
-        switch (scancode)
-        {
-        case 0x49: /* Page Up */
-            terminal_scrollback_page_up();
-            return;
-
-        case 0x51: /* Page Down */
-            terminal_scrollback_page_down();
-            return;
-
-        default:
-            return;
-        }
     }
 
     /* Convert scancode to ASCII character */
