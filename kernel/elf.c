@@ -69,24 +69,31 @@ uint32_t elf_get_entry(void *elf_data)
  */
 static void *map_user_page_accessible(task_t *task, uint32_t user_vaddr, uint32_t flags)
 {
-    /* Allocate physical page */
+    /* FIRST THING - always print */
+    terminal_writestring("[MAP_CALL] vaddr=0x");
+    terminal_write_hex(user_vaddr);
+    terminal_writestring("\n");
+
     void *phys = pmm_alloc_block();
     if (!phys)
     {
+        terminal_writestring("[MAP_CALL] PMM alloc failed!\n");
         return NULL;
     }
 
-    /* Map in task's page directory (for when task runs) */
-    /* We need to manually manipulate the task's page directory here */
+    terminal_writestring("[MAP_CALL] Got phys=0x");
+    terminal_write_hex((uint32_t)phys);
+    terminal_writestring("\n");
+
     uint32_t pd_idx = (user_vaddr >> 22) & 0x3FF;
     uint32_t pt_idx = (user_vaddr >> 12) & 0x3FF;
-
     uint32_t *task_pd = task->page_directory;
 
-    /* Get or create page table in task's address space */
+    uint32_t *task_pt;
+    uint32_t temp_pt_vaddr = 0;
+
     if (!(task_pd[pd_idx] & VMM_PRESENT))
     {
-        /* Allocate page table */
         void *pt_phys = pmm_alloc_block();
         if (!pt_phys)
         {
@@ -94,23 +101,34 @@ static void *map_user_page_accessible(task_t *task, uint32_t user_vaddr, uint32_
             return NULL;
         }
 
-        /* Zero it (we need to map it temporarily to zero it) */
-        uint32_t temp_vaddr = 0xF0000000; /* Temporary kernel mapping area */
-        vmm_map_page(temp_vaddr, (uint32_t)pt_phys, VMM_PRESENT | VMM_WRITE);
-        memset((void *)temp_vaddr, 0, PAGE_SIZE);
-        vmm_unmap_page(temp_vaddr);
+        temp_pt_vaddr = 0xF0000000;
+        vmm_map_page(temp_pt_vaddr, (uint32_t)pt_phys, VMM_PRESENT | VMM_WRITE);
+        memset((void *)temp_pt_vaddr, 0, PAGE_SIZE);
 
-        /* Install in task's page directory */
         task_pd[pd_idx] = ((uint32_t)pt_phys) | VMM_PRESENT | VMM_WRITE | VMM_USER;
+        task_pt = (uint32_t *)temp_pt_vaddr;
+    }
+    else
+    {
+        uint32_t pt_phys = task_pd[pd_idx] & ~0xFFF;
+        temp_pt_vaddr = 0xF0000000;
+        vmm_map_page(temp_pt_vaddr, pt_phys, VMM_PRESENT | VMM_WRITE);
+        task_pt = (uint32_t *)temp_pt_vaddr;
     }
 
-    /* Get page table */
-    uint32_t *task_pt = (uint32_t *)(task_pd[pd_idx] & ~0xFFF);
-
-    /* Map page in task's page table */
+    /* Write entry */
     task_pt[pt_idx] = ((uint32_t)phys) | (flags & 0xFFF);
 
-    /* Also map in kernel space temporarily so we can write to it */
+    /* Unmap temp PT WITHOUT freeing - manual unmap */
+    extern struct vmm_address_space *vmm_current_as;
+    uint32_t temp_pd_idx = (temp_pt_vaddr >> 22) & 0x3FF;
+    uint32_t temp_pt_idx = (temp_pt_vaddr >> 12) & 0x3FF;
+    uint32_t *kernel_pd = vmm_current_as->page_dir;
+    uint32_t *kernel_pt = (uint32_t *)(kernel_pd[temp_pd_idx] & ~0xFFF);
+    kernel_pt[temp_pt_idx] = 0; // Clear without freeing
+    __asm__ volatile("invlpg (%0)" ::"r"(temp_pt_vaddr) : "memory");
+
+    /* Map data page in kernel space */
     uint32_t kernel_temp_vaddr = 0xE0000000 + ((uint32_t)phys & 0x00FFFFFF);
     vmm_map_page(kernel_temp_vaddr, (uint32_t)phys, VMM_PRESENT | VMM_WRITE);
 
@@ -179,6 +197,12 @@ int elf_load(task_t *task, void *elf_data)
         {
             uint32_t user_vaddr = vaddr_start + page_num * PAGE_SIZE;
 
+            terminal_writestring("[ELF_LOOP] page ");
+            terminal_write_dec(page_num);
+            terminal_writestring(" vaddr=0x");
+            terminal_write_hex(user_vaddr);
+            terminal_writestring("\n");
+
             /* Determine flags */
             uint32_t flags = VMM_PRESENT | VMM_USER;
             if (phdr[i].p_flags & PF_W)
@@ -218,12 +242,42 @@ int elf_load(task_t *task, void *elf_data)
                 {
                     uint8_t *src = (uint8_t *)elf_data + file_offset;
                     uint8_t *dst = (uint8_t *)kernel_addr + copy_start;
+
+                    /* DEBUG: Show what we're copying */
+                    terminal_writestring("[ELF_COPY] file_offset=0x");
+                    terminal_write_hex(file_offset);
+                    terminal_writestring(" copy_start=0x");
+                    terminal_write_hex(copy_start);
+                    terminal_writestring(" copy_size=0x");
+                    terminal_write_hex(copy_size);
+                    terminal_writestring("\n");
+                    terminal_writestring("[ELF_COPY] First 8 bytes from ELF: ");
+                    for (int j = 0; j < 8; j++) {
+                        terminal_write_hex(src[j]);
+                        terminal_putchar(' ');
+                    }
+                    terminal_writestring("\n");
+
                     memcpy(dst, src, copy_size);
+
+                    /* Verify what was written */
+                    terminal_writestring("[ELF_COPY] First 8 bytes written: ");
+                    for (int j = 0; j < 8; j++) {
+                        terminal_write_hex(dst[j]);
+                        terminal_putchar(' ');
+                    }
+                    terminal_writestring("\n");
                 }
             }
 
-            /* Unmap from kernel temp space */
-            vmm_unmap_page((uint32_t)kernel_addr);
+            /* Unmap from kernel temp space WITHOUT freeing */
+            extern struct vmm_address_space *vmm_current_as;
+            uint32_t temp_pd_idx = (((uint32_t)kernel_addr) >> 22) & 0x3FF;
+            uint32_t temp_pt_idx = (((uint32_t)kernel_addr) >> 12) & 0x3FF;
+            uint32_t *kernel_pd = vmm_current_as->page_dir;
+            uint32_t *kernel_pt = (uint32_t *)(kernel_pd[temp_pd_idx] & ~0xFFF);
+            kernel_pt[temp_pt_idx] = 0;
+            __asm__ volatile("invlpg (%0)" ::"r"((uint32_t)kernel_addr) : "memory");
         }
 
         /* Track memory regions */

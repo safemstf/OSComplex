@@ -70,6 +70,15 @@ void vmm_free_page(void* virt_addr);
 void* vmm_alloc_pages(size_t count, uint32_t flags);
 void vmm_free_pages(void* virt_addr, size_t count);
 
+void vmm_map_page_in_as(struct vmm_address_space *as,
+                        uint32_t virt_addr,
+                        uint32_t phys_addr,
+                        uint32_t flags);
+
+void vmm_unmap_page_in_as(struct vmm_address_space *as,
+                          uint32_t virt_addr);
+
+
 /* Query functions */
 uint32_t vmm_virt_to_phys(uint32_t virt_addr);
 uint32_t vmm_get_flags(uint32_t virt_addr);

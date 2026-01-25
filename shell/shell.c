@@ -962,71 +962,22 @@ static void cmd_exec(const char *args)
     while (*args == ' ')
         args++;
 
-    terminal_setcolor(vga_entry_color(VGA_COLOR_LIGHT_CYAN, VGA_COLOR_BLACK));
-    terminal_writestring("\n[EXEC] Loading program: ");
-    terminal_writestring(args);
-    terminal_writestring("\n");
-    terminal_setcolor(vga_entry_color(VGA_COLOR_WHITE, VGA_COLOR_BLACK));
-
-    /* Open the file */
-    int fd = vfs_open(args, O_RDONLY);
-    if (fd < 0)
-    {
-        terminal_setcolor(vga_entry_color(VGA_COLOR_LIGHT_RED, VGA_COLOR_BLACK));
-        terminal_writestring("[EXEC] ERROR: File not found\n");
-        terminal_setcolor(vga_entry_color(VGA_COLOR_WHITE, VGA_COLOR_BLACK));
-        return;
-    }
-
-    /* Allocate buffer for ELF file (max 64KB) */
-    void *elf_data = kmalloc(65536);
-    if (!elf_data)
-    {
-        terminal_writestring("[EXEC] ERROR: Out of memory\n");
-        vfs_close(fd);
-        return;
-    }
-
-    /* Read the entire file */
-    int bytes_read = vfs_read(fd, elf_data, 65536);
-    vfs_close(fd);
-
-    if (bytes_read <= 0)
-    {
-        terminal_writestring("[EXEC] ERROR: Failed to read file\n");
-        kfree(elf_data);
-        return;
-    }
-
-    terminal_writestring("[EXEC] Read ");
-    terminal_write_dec(bytes_read);
-    terminal_writestring(" bytes\n");
-
-    /* Create user task */
-    task_t *user_task = task_create_user("user_program", elf_data, 10);
-
-    kfree(elf_data);
-
-    if (!user_task)
-    {
-        terminal_setcolor(vga_entry_color(VGA_COLOR_LIGHT_RED, VGA_COLOR_BLACK));
-        terminal_writestring("[EXEC] ERROR: Failed to create task\n");
-        terminal_setcolor(vga_entry_color(VGA_COLOR_WHITE, VGA_COLOR_BLACK));
-        return;
-    }
-
-    terminal_setcolor(vga_entry_color(VGA_COLOR_LIGHT_GREEN, VGA_COLOR_BLACK));
-    terminal_writestring("[EXEC] ✓ Program loaded successfully\n");
-    terminal_writestring("[EXEC] Task PID: ");
-    terminal_write_dec(user_task->pid);
-    terminal_writestring("\n");
-
-    scheduler_add_task(user_task);
+    /* Call sys_exec to create and add the task */
+    int result = sys_exec(args);
     
-    terminal_writestring("[EXEC] ✓ Task added to scheduler\n");
-    terminal_setcolor(vga_entry_color(VGA_COLOR_WHITE, VGA_COLOR_BLACK));
+    if (result < 0)
+    {
+        terminal_setcolor(vga_entry_color(VGA_COLOR_LIGHT_RED, VGA_COLOR_BLACK));
+        terminal_writestring("[EXEC] Failed to execute program\n");
+        terminal_setcolor(vga_entry_color(VGA_COLOR_WHITE, VGA_COLOR_BLACK));
+        return;
+    }
 
+    /* Task was created and added to scheduler successfully */
     terminal_writestring("[EXEC] Program will start running soon...\n\n");
+    
+    /* Yield to give the new task a chance to run */
+    task_yield();
 }
 
 extern void user_main(void);

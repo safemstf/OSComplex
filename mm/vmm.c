@@ -332,6 +332,15 @@ struct vmm_address_space *vmm_create_as(void)
     }
     memset(as->page_dir, 0, PAGE_SIZE);
 
+    /* Copy identity mapping (first 128MB) for VGA, hardware, etc */
+    for (uint32_t i = 0; i < 32; i++)
+    { // First 32 entries = 128MB
+        if (kernel_page_dir[i] & VMM_PRESENT)
+        {
+            as->page_dir[i] = kernel_page_dir[i];
+        }
+    }
+
     /* Copy kernel mappings (upper 256 entries) */
     for (uint32_t i = 768; i < 1024; i++)
     {
@@ -403,4 +412,45 @@ void vmm_switch_as(struct vmm_address_space *as)
 
     vmm_current_as = as;
     asm volatile("mov %0, %%cr3" ::"r"(as->page_dir) : "memory");
+}
+
+void vmm_map_page_in_as(struct vmm_address_space *as,
+                        uint32_t virt_addr,
+                        uint32_t phys_addr,
+                        uint32_t flags)
+{
+    if (!as || !as->page_dir)
+        return;
+
+    vmm_map_page_internal(as->page_dir, virt_addr, phys_addr, flags);
+}
+
+void vmm_unmap_page_in_as(struct vmm_address_space *as,
+                          uint32_t virt_addr)
+{
+    if (!as || !as->page_dir)
+        return;
+
+    uint32_t pd_idx = pd_index(virt_addr);
+    uint32_t pt_idx = pt_index(virt_addr);
+
+    uint32_t pde = as->page_dir[pd_idx];
+    if (!(pde & VMM_PRESENT))
+        return;
+
+    uint32_t *pt = (uint32_t *)(pde & ~0xFFF);
+    uint32_t old_pte = pt[pt_idx];
+
+    pt[pt_idx] = 0;
+
+    if (old_pte & VMM_PRESENT)
+    {
+        uint32_t phys = old_pte & ~0xFFF;
+        if (phys >= 0x100000)
+        {
+            pmm_free_block((void *)phys);
+        }
+    }
+
+    asm volatile("invlpg (%0)" ::"r"(virt_addr & ~0xFFF) : "memory");
 }

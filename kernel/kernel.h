@@ -153,13 +153,13 @@ void keyboard_handler(void);
 void ata_init(void);
 
 /* Drive identification constants */
-#define ATA_PRIMARY_MASTER     0
-#define ATA_PRIMARY_SLAVE      1
-#define ATA_SECONDARY_MASTER   2
-#define ATA_SECONDARY_SLAVE    3
+#define ATA_PRIMARY_MASTER 0
+#define ATA_PRIMARY_SLAVE 1
+#define ATA_SECONDARY_MASTER 2
+#define ATA_SECONDARY_SLAVE 3
 
 /* Sector size */
-#define ATA_SECTOR_SIZE        512
+#define ATA_SECTOR_SIZE 512
 
 /* ==================================================================
  * VIRTUAL FILE SYSTEM & FILESYSTEMS
@@ -179,18 +179,18 @@ void vfs_init(void);
 void ramfs_init(void);
 /* After tarfs_init() declaration */
 void fat_init(void);
-struct vfs_node* fat_mount(uint8_t drive, uint32_t partition_start);
+struct vfs_node *fat_mount(uint8_t drive, uint32_t partition_start);
 int fat_sync(void);
-void fat_unmount(struct vfs_node* root);
+void fat_unmount(struct vfs_node *root);
 
 void tarfs_init(void);
 
 /* TarFS function that kernel.c needs */
-struct vfs_node* tarfs_load(uint8_t drive, uint32_t start_lba);
+struct vfs_node *tarfs_load(uint8_t drive, uint32_t start_lba);
 
 /* VFS globals (defined in vfs.c) */
-extern struct vfs_node* vfs_root;
-extern struct vfs_node* vfs_cwd;
+extern struct vfs_node *vfs_root;
+extern struct vfs_node *vfs_cwd;
 
 /* ==================================================================
  * STRING UTILITIES

@@ -19,26 +19,69 @@ void page_fault_handler(uint32_t *stack_ptr)
 {
     /* Disable interrupts to prevent nested faults */
     __asm__ volatile("cli");
-    
+
     terminal_setcolor(vga_entry_color(VGA_COLOR_LIGHT_CYAN, VGA_COLOR_BLACK));
     terminal_writestring("\n=== PAGE FAULT HANDLER ENTERED ===\n");
     terminal_setcolor(vga_entry_color(VGA_COLOR_WHITE, VGA_COLOR_BLACK));
-    
+
     uint32_t fault_addr;
     asm volatile("mov %%cr2, %0" : "=r"(fault_addr));
+
+    uint32_t esp_value;
+    asm volatile("mov %%esp, %0" : "=r"(esp_value));
 
     /* Use STACK_* macros - stack_ptr is already the direct stack pointer */
     uint32_t err_code = STACK_ERRCODE(stack_ptr);
     uint32_t eip = STACK_EIP(stack_ptr);
+    uint32_t cs = STACK_CS(stack_ptr);
+
+    /* For user-mode faults, the ISR stub pushes registers before calling us.
+     * The full stack layout is (using isr_stack.h definitions):
+     * [sp + 0]  = GS
+     * [sp + 1]  = FS
+     * [sp + 2]  = ES
+     * [sp + 3]  = DS
+     * [sp + 4]  = EDI (from pusha)
+     * [sp + 5]  = ESI
+     * [sp + 6]  = EBP
+     * [sp + 7]  = ESP (dummy from pusha)
+     * [sp + 8]  = EBX
+     * [sp + 9]  = EDX
+     * [sp + 10] = ECX
+     * [sp + 11] = EAX
+     * [sp + 12] = Error code
+     * [sp + 13] = Int number (pushed by ISR stub)
+     * [sp + 14] = EIP
+     * [sp + 15] = CS
+     * [sp + 16] = EFLAGS
+     * [sp + 17] = User ESP  ← Only present for user-mode faults (CPL change)
+     * [sp + 18] = User SS   ← Only present for user-mode faults (CPL change)
+     */
+    uint32_t user_esp = 0;
+    uint32_t user_ss = 0;
+
+    /* Only read user ESP/SS if fault came from user mode (RPL=3 in CS) */
+    if ((cs & 0x3) == 3) {
+        user_esp = stack_ptr[17];
+        user_ss = stack_ptr[18];
+    }
 
     terminal_writestring("Fault address: 0x");
     terminal_write_hex(fault_addr);
     terminal_writestring("\n");
-    
+
+    terminal_writestring("Saved user ESP: 0x");
+    terminal_write_hex(user_esp); // ← FIX THIS LINE
+    terminal_writestring("\n");
+
+    terminal_writestring("Saved user SS: 0x");
+    terminal_write_hex(user_ss);
+    terminal_writestring("\n");
+
     terminal_writestring("Error code: 0x");
     terminal_write_hex(err_code);
     terminal_writestring("\n");
-    
+
     terminal_writestring("EIP: 0x");
     terminal_write_hex(eip);
     terminal_writestring("\n");
@@ -67,7 +110,7 @@ void page_fault_handler(uint32_t *stack_ptr)
     if (!(err_code & PF_PRESENT))
     {
         uint32_t page_addr = fault_addr & ~0xFFF;
-        
+
         terminal_writestring("\nAttempting recovery for address 0x");
         terminal_write_hex(page_addr);
         terminal_writestring("...\n");
@@ -90,14 +133,14 @@ void page_fault_handler(uint32_t *stack_ptr)
             terminal_writestring("\n");
 
             terminal_writestring("Step 3: Calling vmm_map_page()...\n");
-            
+
             /* CRITICAL: Make sure vmm_map_page doesn't trigger another fault! */
             vmm_map_page(page_addr, (uint32_t)phys, VMM_PRESENT | VMM_WRITE);
 
             terminal_writestring("Step 4: vmm_map_page() returned successfully\n");
 
             terminal_writestring("Step 5: Calling memset() to zero page...\n");
-            
+
             /* CRITICAL: This memset might trigger another fault if mapping didn't work! */
             memset((void *)page_addr, 0, PAGE_SIZE);
 
@@ -106,7 +149,7 @@ void page_fault_handler(uint32_t *stack_ptr)
             terminal_setcolor(vga_entry_color(VGA_COLOR_LIGHT_GREEN, VGA_COLOR_BLACK));
             terminal_writestring("\n[SUCCESS] Page fault recovered! Returning to program...\n");
             terminal_setcolor(vga_entry_color(VGA_COLOR_WHITE, VGA_COLOR_BLACK));
-            
+
             /* Re-enable interrupts before returning */
             __asm__ volatile("sti");
             return;
@@ -151,7 +194,7 @@ void test_page_fault_recovery(void)
     /* Test 1: Access unmapped memory in heap range */
     terminal_writestring("[TEST 1] Accessing unmapped page at 0xC0500000...\n");
     terminal_writestring("         About to trigger page fault...\n");
-    
+
     volatile uint32_t *test_ptr = (volatile uint32_t *)0xC0500000;
 
     terminal_writestring("         Writing 0xDEADBEEF...\n");

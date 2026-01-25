@@ -1,15 +1,6 @@
 /* kernel/switch.s - Context Switching Assembly
  * 
- * Switches execution from one task to another.
- * 
  * CRITICAL: Offsets must match cpu_context_t and task_t in task.h!
- * 
- * task_t layout:
- * - pid (4 bytes)
- * - name[32] (32 bytes)
- * - state (4 bytes)
- * - priority (4 bytes)
- * - context (cpu_context_t) starts at offset 44
  */
 
 .section .text
@@ -21,89 +12,95 @@
 task_switch_asm:
     cli                         /* Disable interrupts during switch */
     
+    /* Get parameters into registers we won't overwrite */
     mov 4(%esp), %eax          /* eax = old_task */
-    mov 8(%esp), %ecx          /* ecx = new_task */
+    mov 8(%esp), %edx          /* edx = new_task */
     
     /* Skip saving if old_task is NULL */
     test %eax, %eax
-    jz load_new
+    jz .load_new
     
     /* ====== SAVE OLD TASK ====== */
-    /* Save general purpose registers to old_task->context */
-    mov %edi, CONTEXT_OFFSET+0(%eax)
-    mov %esi, CONTEXT_OFFSET+4(%eax)
-    mov %ebp, CONTEXT_OFFSET+8(%eax)
-    mov %esp, CONTEXT_OFFSET+12(%eax)
-    mov %ebx, CONTEXT_OFFSET+16(%eax)
-    mov %edx, CONTEXT_OFFSET+20(%eax)
+    /* Save general purpose registers in order */
+    mov %edi, CONTEXT_OFFSET+0(%eax)   /* edi */
+    mov %esi, CONTEXT_OFFSET+4(%eax)   /* esi */
+    mov %ebp, CONTEXT_OFFSET+8(%eax)   /* ebp */
     
-    /* Save ecx (currently holds new_task, get original from stack) */
-    push %ecx
-    mov 8(%esp), %ecx
-    mov %ecx, CONTEXT_OFFSET+24(%eax)
-    pop %ecx
+    /* Save ESP: current stack pointer + 8 (skip return address and old param) */
+    lea 8(%esp), %ecx
+    mov %ecx, CONTEXT_OFFSET+12(%eax)  /* esp */
     
-    /* Save eax (get original from before function call) */
-    push %ecx
-    mov 12(%esp), %edx
-    mov %edx, CONTEXT_OFFSET+28(%eax)
-    pop %ecx
+    mov %ebx, CONTEXT_OFFSET+16(%eax)  /* ebx */
+    
+    /* Save actual EDX value (not the parameter!) */
+    push %edx                          /* Temporarily save new_task */
+    mov 12(%esp), %edx                 /* Get original EDX from stack (before call) */
+    mov %edx, CONTEXT_OFFSET+20(%eax)  /* Save it */
+    pop %edx                           /* Restore new_task */
+    
+    mov %ecx, CONTEXT_OFFSET+24(%eax)  /* ecx */
+    
+    /* Save eax */
+    push %eax                          /* Save old_task pointer */
+    mov 8(%esp), %ecx                  /* Get original EAX from stack */
+    pop %eax                           /* Restore old_task pointer */
+    mov %ecx, CONTEXT_OFFSET+28(%eax)  /* Save original EAX */
     
     /* Save segment registers */
-    mov %ds, %dx
-    mov %dx, CONTEXT_OFFSET+32(%eax)
-    mov %es, %dx
-    mov %dx, CONTEXT_OFFSET+36(%eax)
-    mov %fs, %dx
-    mov %dx, CONTEXT_OFFSET+40(%eax)
-    mov %gs, %dx
-    mov %dx, CONTEXT_OFFSET+44(%eax)
+    mov %ds, %cx
+    mov %cx, CONTEXT_OFFSET+32(%eax)   /* ds */
+    mov %es, %cx
+    mov %cx, CONTEXT_OFFSET+36(%eax)   /* es */
+    mov %fs, %cx
+    mov %cx, CONTEXT_OFFSET+40(%eax)   /* fs */
+    mov %gs, %cx
+    mov %cx, CONTEXT_OFFSET+44(%eax)   /* gs */
     
     /* Save return address as EIP */
-    mov (%esp), %edx
-    mov %edx, CONTEXT_OFFSET+48(%eax)
+    mov (%esp), %ecx
+    mov %ecx, CONTEXT_OFFSET+48(%eax)  /* eip */
     
-    /* Save code segment and flags */
-    mov %cs, %dx
-    mov %dx, CONTEXT_OFFSET+52(%eax)
+    /* Save CS and EFLAGS */
+    mov %cs, %cx
+    mov %cx, CONTEXT_OFFSET+52(%eax)   /* cs */
     pushf
-    pop %edx
-    mov %edx, CONTEXT_OFFSET+56(%eax)
+    pop %ecx
+    mov %ecx, CONTEXT_OFFSET+56(%eax)  /* eflags */
     
-load_new:
+.load_new:
     /* ====== LOAD NEW TASK ====== */
-    /* Restore segments */
-    mov CONTEXT_OFFSET+32(%ecx), %dx
-    mov %dx, %ds
-    mov CONTEXT_OFFSET+36(%ecx), %dx
-    mov %dx, %es
-    mov CONTEXT_OFFSET+40(%ecx), %dx
-    mov %dx, %fs
-    mov CONTEXT_OFFSET+44(%ecx), %dx
-    mov %dx, %gs
+    /* edx contains new_task */
     
-    /* Restore stack pointer */
-    mov CONTEXT_OFFSET+12(%ecx), %esp
+    /* Load segment registers FIRST */
+    mov CONTEXT_OFFSET+32(%edx), %bx
+    mov %bx, %ds
+    mov CONTEXT_OFFSET+36(%edx), %bx
+    mov %bx, %es
+    mov CONTEXT_OFFSET+40(%edx), %bx
+    mov %bx, %fs
+    mov CONTEXT_OFFSET+44(%edx), %bx
+    mov %bx, %gs
     
-    /* Restore registers */
-    mov CONTEXT_OFFSET+0(%ecx), %edi
-    mov CONTEXT_OFFSET+4(%ecx), %esi
-    mov CONTEXT_OFFSET+8(%ecx), %ebp
-    mov CONTEXT_OFFSET+16(%ecx), %ebx
-    mov CONTEXT_OFFSET+20(%ecx), %edx
+    /* Load stack pointer */
+    mov CONTEXT_OFFSET+12(%edx), %esp
     
-    /* Push return address */
-    push CONTEXT_OFFSET+48(%ecx)
+    /* Load general purpose registers (except eax, edx) */
+    mov CONTEXT_OFFSET+0(%edx), %edi
+    mov CONTEXT_OFFSET+4(%edx), %esi
+    mov CONTEXT_OFFSET+8(%edx), %ebp
+    mov CONTEXT_OFFSET+16(%edx), %ebx
+    mov CONTEXT_OFFSET+24(%edx), %ecx
     
-    /* Restore flags */
-    push CONTEXT_OFFSET+56(%ecx)
+    /* Push return address (EIP) */
+    push CONTEXT_OFFSET+48(%edx)
+    
+    /* Load EFLAGS */
+    push CONTEXT_OFFSET+56(%edx)
     popf
     
-    /* Restore ecx and eax */
-    mov CONTEXT_OFFSET+24(%ecx), %eax
-    push %eax
-    mov CONTEXT_OFFSET+28(%ecx), %eax
-    pop %ecx
+    /* Load EAX first, then EDX last (destroys pointer) */
+    mov CONTEXT_OFFSET+28(%edx), %eax
+    mov CONTEXT_OFFSET+20(%edx), %edx
     
     sti                         /* Re-enable interrupts */
     ret                         /* Jump to saved EIP */

@@ -200,10 +200,10 @@ void scheduler_tick(void)
 void scheduler_schedule(void)
 {
     if (!scheduler_running) return;
-    
+
     /* Pick next task */
     task_t *next = scheduler_pick_next();
-    
+
     if (!next || next == current_task) {
         /* Reset current task's time slice */
         if (current_task) {
@@ -211,20 +211,10 @@ void scheduler_schedule(void)
         }
         return;
     }
-    
-    /* Perform context switch */
-    task_t *old = current_task;
-    
-    if (old && old->state == TASK_RUNNING) {
-        old->state = TASK_READY;
-    }
-    
-    next->state = TASK_RUNNING;
-    current_task = next;
-    
+
     stats.context_switches++;
-    
-    /* Context switch happens here (will implement in assembly) */
+
+    /* Context switch happens here */
     task_switch(next);
 }
 

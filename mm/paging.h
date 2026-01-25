@@ -1,3 +1,5 @@
+/* mm/paging.h - Paging structures and functions */
+
 #ifndef PAGING_H
 #define PAGING_H
 
